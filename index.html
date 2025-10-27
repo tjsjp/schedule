@@ -1,1 +1,1590 @@
+﻿<!DOCTYPE html>
+<head>
+  <meta charset="UTF-8" /><!-- iOS: ホーム画面追加で全画面表示 -->
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="行動予定表">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <!-- PWA manifest -->
+  <link rel="manifest" href="./manifest.json">
+  <link rel="apple-touch-icon" href="./favicon.png">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>行動予定表</title>
+
+  <link rel="icon" href="./favicon.png" type="image/png">
+  <!-- UI 基本 -->
+  <style>
+    :root {
+      /* 既存 --pad は残しつつ、安全域を考慮した余白を加算したい場合に使えます */
+      --safe-top: env(safe-area-inset-top, 0px);
+      --pad:12px;
+      --safe-bottom: env(safe-area-inset-bottom, 0px);
+    }
+    /* 100vhのアドレスバー問題を避ける：svh/dvh対応 */
+    html, body {
+      height: 100%;
+      overflow-x: hidden; 
+    }
+    body {
+      font-family: system-ui, -apple-system, "ヒラギノ角ゴ ProN", Meiryo, sans-serif; margin:0; background:#f7f7f7; 
+      min-height: 100svh;    /* iOS/最新ブラウザで安定 */
+      min-height: 100dvh;    /* こちらが使える環境ではより正確 */
+      padding-top: var(--safe-top);      padding-bottom: var(--safe-bottom);
+    }
+    
+    /* 最下部のフッタ安全域（既存footerを活用） */
+    footer {
+      height: calc(24px + var(--safe-bottom));
+    }
+    header{ position:sticky; top:0; z-index:100; background:#fff; border-bottom:1px solid #e5e5e5; padding-top: calc(8px + var(--safe-top));}
+    .bar{ display:flex; gap:8px; align-items:center; padding:8px var(--pad); flex-wrap:wrap; }
+    .grow{ flex:1 1 auto; }
+    select, input, button, textarea{
+      font:inherit;
+      padding:8px;
+      border:1px solid #ccc;
+      border-radius:8px;
+      background:#fff;
+      box-sizing:border-box;   /* prevent overflow by including padding/border */
+      max-width:100%;          /* avoid spilling out of narrow containers */
+    }
+    button{ cursor:pointer; }
+    .panel{ background:#fff; margin:12px; padding:12px; border-radius:12px; box-shadow:0 2px 8px rgba(0,0,0,.04); 
+      box-sizing: border-box;
+      overflow: visible;          /* はみ出しをカット */}
+    .muted{ color:#666; font-size:1em; }
+    .row{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+    /* 親がスクロールを奪わないように（重要） */
+    #companyListBody { max-height: 30vh; overflow: auto; }
+    /* 片手操作向けにボタン大きめ */
+    .btn{ padding:10px 14px; border-radius:10px; border:1px solid #bbb; background:#fff; }
+    .btn-primary{ background:#1a73e8; color:#fff; border-color:#1a73e8; }
+    .dirty-badge{
+      display:none;
+      align-items:center;
+      justify-content:center;
+      margin-left:6px;
+      padding:0 8px;
+      min-width:24px;
+      height:24px;
+      border-radius:12px;
+      background:#ff7043;
+      color:#fff;
+      font-size:0.75rem;
+      font-weight:600;
+      transition:background-color .2s ease;
+    }
+    .dirty-badge.is-empty{
+      background:#4caf50;
+    }
+    #refreshBtn {
+      font-size: 1.2em;
+      line-height: 1;
+      padding: 6px 10px;
+      border-radius: 8px;
+    }
+    /* Help modal (mobile) */
+    .help-modal{ position:fixed; inset:0; display:none; z-index:10000; }
+    .help-modal[aria-hidden="false"]{ display:block; }
+    .help-backdrop{ position:absolute; inset:0; background:rgba(0,0,0,.4); }
+    .help-panel{
+      position:relative; max-width:640px; margin:8vh auto; background:#fff;
+      border-radius:12px; padding:16px; box-shadow:0 8px 30px rgba(0,0,0,.18);
+    }
+    .help-close{
+      position:absolute; right:10px; top:8px; font-size:22px; line-height:1;
+      border:0; background:transparent; cursor:pointer;
+    }
+    .help-body{ margin:8px 0 4px; max-height:60vh; overflow:auto; }
+    /* ===== 今日の予定（カード） ===== */
+    .today-section {
+      margin-bottom: 16px;
+    }
+    .today-section h3 {
+      margin: 0 0 8px;
+      font-size: 1.05rem;
+      color: #333;
+      padding: 4px 0;
+      border-bottom: 1px solid #eee;
+    }
+    .card-grid {
+      display: grid;
+      grid-template-columns: 1fr;      /* モバイル1列 */
+      gap: 8px;
+    }
+    @media (min-width: 560px) {
+      .card-grid { grid-template-columns: 1fr 1fr; } /* 横幅あれば2列 */
+    }
+    .today-card {
+      border: 1px solid #e5e5e5;
+      border-radius: 10px;
+      background: #fff;
+      padding: 10px;
+      box-shadow: 0 2px 6px rgba(0,0,0,.04);
+    }
+    .today-card .row4 {
+      display: grid;
+      grid-template-columns: 1.1fr 1.3fr 1fr 1fr; /* 名前/メモ/AM/PM */
+      gap: 8px;
+      align-items: start;
+    }
+    .today-card .cell {
+      min-width: 0;
+    }
+    .today-card .label {
+      display: block;
+      font-size: 11px;
+      color: #666;
+      margin-bottom: 2px;
+    }
+    .today-card .val {
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .today-card .name { font-weight: 700; }
+    .today-card .am, .today-card .pm {
+      border-left: 3px solid #f0f0f0;
+      padding-left: 6px;
+    }
+    /* 部署色(8色バケット) */
+    .dep-1{ background:#fff7e6 !important; }
+    .dep-2{ background:#e6f7ff !important; }
+    .dep-3{ background:#f9f0ff !important; }
+    .dep-4{ background:#e6fffb !important; }
+    .dep-5{ background:#f6ffed !important; }
+    .dep-6{ background:#fff1f0 !important; }
+    .dep-7{ background:#f0f5ff !important; }
+    .dep-8{ background:#fefefe !important; }
+    .dep-head{ box-shadow: inset 0 2px #888; }
+
+    /* トグルの見た目 */
+    .togglebar{ display:flex; gap:12px; align-items:center; flex-wrap:wrap; padding:8px var(--pad); }
+    .tgl{ padding:0 8px; border:1px solid #bbb; background:#fff; border-radius:8px; height:28px; min-width:34px; cursor:pointer; }
+    .tgl[aria-pressed="true"]{ font-weight:700; border-color:#666; background:#999;}
+    .tgl:disabled{ opacity:.45; pointer-events:none; filter:grayscale(40%); }
+
+    /* 各パネル共通 */
+    .quick-section{ margin:12px; }
+    .schedule-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(255, 255, 255, 0.7);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 5000;
+      font-size: 1.5rem;
+      color: #333;
+      backdrop-filter: blur(2px);
+    }
+    .overlay-text {
+      padding: 12px 24px;
+      border-radius: 8px;
+      background: rgba(255,255,255,0.8);
+      box-shadow: 0 0 10px rgba(0,0,0,0.1);
+    }
+  </style>
+
+  <!-- ===== Jspreadsheet CE + jSuites ===== -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/jsuites@4.15.0/dist/jsuites.min.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/jspreadsheet-ce@4.11.4/dist/jspreadsheet.css" />
+  <link rel="stylesheet" href="./schedule-grid.css" />
+  <script src="https://cdn.jsdelivr.net/npm/jsuites@4.15.0/dist/jsuites.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspreadsheet-ce@4.11.4/dist/index.js"></script>
+  <script src="./grid-control.js"></script>
+  <script src="./schedule-grid.js"></script>
+  
+  <script type="module">
+    /*  ===== Supabase & 祝日 ===== */
+    import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+    import * as holiday_jp from 'https://esm.sh/@holiday-jp/holiday_jp@2';
+
+    /* =============================== 定数 =============================== */
+    let employeesAll = [];
+    let employeesVisible = [];
+    let currentUser = { email:null, employee_id:null, department:null, is_active:false, is_admin:false };
+    let grid = null;
+    let currentGridMeta = null;
+    let initialGridSnapshot = [];
+    let lastDeptSelectValue = '';
+    let lastMonthSelectValue = '';
+    let memoTargetEmployeeId = null;
+    const JP_CAL_OPTS = {
+      format:'YYYY-MM-DD', firstDay:0,
+      months:['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'],
+      monthsShort:['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'],
+      weekdays:['日曜日','月曜日','火曜日','水曜日','木曜日','金曜日','土曜日'],
+      weekdays_short:['日','月','火','水','木','金','土'],
+      today:'今日', clear:'クリア', close:'閉じる'
+    };
+    /* =============================== ログイン =============================== */
+    const SUPABASE_URL = 'https://rqrgsytkxbhbrnrhqlca.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJxcmdzeXRreGJoYnJucmhxbGNhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTU2ODIyODMsImV4cCI6MjA3MTI1ODI4M30.LWeiva7gpFf9lHGuOKqzyr-tZihHuX9KdlHUjuqYDU0';
+    const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      auth: {
+        persistSession: true,        // 端末ごとにセッション保持
+        autoRefreshToken: false,     // ★自動リフレッシュを止める
+        detectSessionInUrl: true,
+      },
+    });
+
+    function showLoginModal() {
+      document.getElementById('loginModal').style.display = '';
+      document.getElementById('appRoot').style.display = 'none';
+    }
+    
+    async function getActiveSessionOrLogout() {
+      const { data: { session } } = await supabase.auth.getSession();
+      const now = Math.floor(Date.now() / 1000);
+      const exp = session?.expires_at ?? 0;
+    
+      // セッションなし or アクセストークン期限切れ → ログアウト＆ログイン要求
+      if (!session || !session.access_token || exp <= now) {
+        try { await supabase.auth.signOut({ scope: 'local' }); } catch (err) {}
+        showLoginModal();                // ← 既存のモーダル展開関数を呼ぶ
+        throw new Error('session_expired');
+      }
+      return session;
+    }
+    // --- 失効・サインアウト監視（グローバル） ---
+    supabase.auth.onAuthStateChange((evt) => {
+      if (evt === 'SIGNED_OUT') {
+        showLoginModal();  // すぐログイン画面へ
+      }
+    });
+    
+    // 定期チェック（5分ごと）& タブ復帰時チェック
+    const SESSION_CHECK_MS = 5 * 60 * 1000;
+    setInterval(async () => {
+      try { await getActiveSessionOrLogout(); } catch (err) {}
+    }, SESSION_CHECK_MS);
+    
+    document.addEventListener('visibilitychange', async () => {
+      if (document.visibilityState === 'visible') {
+        try { await getActiveSessionOrLogout(); } catch (err) {}
+      }
+    });
+    /* =============================== 祝日 =============================== */
+    const toDate = (v) => { if (v instanceof Date) return new Date(v.getFullYear(), v.getMonth(), v.getDate());
+    if (typeof v === 'string') { 
+      const m = v.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/); 
+      if (m) return new Date(+m[1], +m[2]-1, +m[3]); 
+    } 
+    if (typeof v === 'number') {
+      const s = String(v);
+      if (s.length===8) return new Date(+s.slice(0,4), +s.slice(4,6)-1, +s.slice(6,8));
+    }
+    return new Date(v); };
+    window.holiday_jp = holiday_jp; // ← 公開 
+    window.isHoliday = (ymd) => { try { return !!holiday_jp.isHoliday(toDate(ymd)); } catch { return false; } };
+    /* =============================== ダーティ管理状態 =============================== */
+    function showOverlay(show = true,msg = '処理中...') {
+      const ov = document.getElementById('scheduleOverlay');
+      if (!ov) return;
+      if (show){
+        ov.querySelector('.overlay-text').textContent = msg;
+        ov.style.display = 'flex';
+      }else{
+        ov.style.display = 'none';
+      }
+    }
+    
+    const dirtyCells = new Set();
+    function cellKey(y,x){ return `${y}:${x}`; }
+    function updateDirtyBadge() {
+      const badge = document.getElementById('dirtyBadge');
+      const saveBtn = document.getElementById('gridSaveBtn');
+      const count = dirtyCells.size;
+      const { isProbablyMobile } = detectEnvironment();
+
+      if (badge) {
+        badge.textContent = count;
+        badge.classList.toggle('is-empty', count === 0);
+        badge.style.display = isProbablyMobile ? 'none' : 'inline-flex';
+      }
+      if (saveBtn) {
+        saveBtn.style.display = isProbablyMobile ? 'none' : 'inline-flex';
+      }
+    }
+
+    function markDirty(y,x,yes){
+      const key = cellKey(y,x);
+      // Prefer current Jspreadsheet instance used by ScheduleGrid
+      const jss = window.GridInstance || grid;
+      const td = jss?.getCellFromCoords?.(x,y);
+      if(yes){ dirtyCells.add(key); td?.classList?.add('dirty-cell'); }
+      else  { dirtyCells.delete(key); td?.classList?.remove('dirty-cell'); }
+      updateDirtyBadge();
+    }
+
+    function clearAllDirty(reset = false,snapshot = []){
+      if(reset){
+        for(const k of dirtyCells){
+          const [y,x] = k.split(':').map(Number);
+          const jss = window.GridInstance || grid;
+          const td = jss?.getCellFromCoords?.(x,y);
+          td?.classList?.remove('dirty-cell');
+        }
+      }else{
+        const normalizeCellValue = (value)=> value == null ? '' : String(value);
+        initialGridSnapshot = snapshot.map(row => row.map(normalizeCellValue));
+      }
+      dirtyCells.clear();
+      updateDirtyBadge();
+    }
+
+    function confirmDiscardIfDirty() {
+      if (dirtyCells.size == 0) return true;
+      return window.confirm('未保存の変更があります。破棄して移動しますか？');
+    }
+
+    function snapshotSelectValues() {
+      const deptEl = document.getElementById('deptSelect');
+      if (deptEl) lastDeptSelectValue = deptEl.value;
+      const monthEl = document.getElementById('monthSelect');
+      if (monthEl) lastMonthSelectValue = monthEl.value;
+    }
+
+    window.markDirty = markDirty;
+    window.updateDirtyBadge = updateDirtyBadge;
+
+    // ===== 管理者のメモ対象選択 用ユーティリティ =====
+    function sortActiveEmployeesForMemo() {
+      return employeesVisible
+        .filter(e => e && e.id != null)
+        .slice()
+        .sort((a, b) => {
+          const ra = a.row_index ?? 0;
+          const rb = b.row_index ?? 0;
+          if (ra !== rb) return ra - rb;
+          return String(a.name || '').localeCompare(String(b.name || ''), 'ja');
+        });
+    }
+
+    function findActiveEmployeeById(empId) {
+      if (empId == null) return null;
+      return employeesVisible.find(e => e && e.id != null && String(e.id) === String(empId)) || null;
+    }
+
+    function syncMemoTextarea(empId) {
+      const textarea = document.getElementById('qNote');
+      if (!textarea) return;
+      const target = findActiveEmployeeById(empId);
+      textarea.value = target?.note || '';
+    }
+
+    // Sync Quick Registration inputs (AM/PM) for selected employee and date
+    async function syncQuickInputs(empId) {
+      try {
+        const dateEl = document.getElementById('qDate');
+        const amEl = document.getElementById('qAm');
+        const pmEl = document.getElementById('qPm');
+        if (!dateEl || !amEl || !pmEl) return;
+
+        const date = toYMD(dateEl.value);
+        if (!date) { amEl.value = ''; pmEl.value = ''; return; }
+
+        const ym = date.slice(0, 7);
+        let items = monthCache.get(ym);
+        if (!items) {
+          try {
+            const { data: { session } } = await supabase.auth.getSession();
+            const token = session?.access_token;
+            if (token) {
+              items = await fetchMonthData(ym, token);
+            }
+          } catch {}
+        }
+
+        let am = '', pm = '';
+        if (items && empId != null) {
+          const strId = String(empId);
+          for (const it of items) {
+            if (String(it.employee_id) === strId && String(it.date).slice(0,10) === date) {
+              const slot = (String(it.slot || '').toLowerCase() === 'pm') ? 'pm' : 'am';
+              if (slot === 'am') am = it.title || '';
+              if (slot === 'pm') pm = it.title || '';
+            }
+          }
+        }
+
+        amEl.value = am || '';
+        pmEl.value = pm || '';
+      } catch {}
+    }
+
+    function updateMemoTargetUI({ preserveSelection = false } = {}) {
+      const wrap = document.getElementById('memoTargetWrap');
+      const select = document.getElementById('memoTargetSelect');
+      if (!wrap || !select) {
+        syncMemoTextarea(memoTargetEmployeeId);
+        return;
+      }
+
+      const isAdmin = !!currentUser?.is_admin;
+      if (!isAdmin) {
+        wrap.style.display = 'none';
+        memoTargetEmployeeId = currentUser?.employee_id != null ? String(currentUser.employee_id) : null;
+        syncMemoTextarea(memoTargetEmployeeId);
+        return;
+      }
+
+      wrap.style.display = '';
+      const activeList = sortActiveEmployeesForMemo();
+      const prevSelection = preserveSelection ? memoTargetEmployeeId : null;
+      select.innerHTML = '';
+      for (const emp of activeList) {
+        const option = document.createElement('option');
+        option.value = String(emp.id);
+        option.textContent = emp.name || '(未設定)';
+        select.appendChild(option);
+      }
+
+      let nextId = null;
+      if (prevSelection && findActiveEmployeeById(prevSelection)) {
+        nextId = prevSelection;
+      } else if (currentUser?.employee_id != null && findActiveEmployeeById(currentUser.employee_id)) {
+        nextId = String(currentUser.employee_id);
+      } else if (activeList.length) {
+        nextId = String(activeList[0].id);
+      }
+
+      memoTargetEmployeeId = nextId;
+      if (select.options.length) {
+        select.value = memoTargetEmployeeId ?? '';
+      }
+      syncMemoTextarea(memoTargetEmployeeId);
+      try { syncQuickInputs(memoTargetEmployeeId); } catch {}
+    }
+
+    const monthCache = new Map(); // ym -> normalized items
+
+    const $ = (q)=>document.querySelector(q);
+    const ymOf = (d)=> `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+    const monthsAround = (base=new Date(), back=3, fwd=3)=>{
+      const list=[]; const d=new Date(base.getFullYear(), base.getMonth()-back, 1);
+      const end=new Date(base.getFullYear(), base.getMonth()+fwd+1, 1);
+      while(d<end){ list.push(ymOf(d)); d.setMonth(d.getMonth()+1,1); }
+      return list;
+    };
+
+    // ページ読み込み時のJST“今日”を固定
+    const JST_NOW = (() => {
+      const parts = Object.fromEntries(
+      new Intl.DateTimeFormat('ja-JP', {
+      timeZone: 'Asia/Tokyo',
+      year: 'numeric', month: '2-digit', day: '2-digit'
+      }).formatToParts(new Date()).map(x => [x.type, x.value])
+      );
+      const { year, month, day } = parts;
+      // JSTのその日 12:00 を指す“安全な瞬間”（TZずれ回避用）
+      const safeForTZ = new Date(Date.UTC(+year, +month - 1, +day, 3, 0, 0)); // 12:00 JST = 03:00 UTC
+      return Object.freeze({
+      year, month, day,
+      ym: `${year}-${month}`,
+      ymd: `${year}-${month}-${day}`,
+      asDate: new Date(+year, +month - 1, +day),
+      safeForTZ,
+      });
+    })();
+
+    function detectEnvironment() {
+      const isSmallViewport = matchMedia('(max-width: 480px)').matches; // SE2=375px想定
+      const isCoarsePointer = matchMedia('(pointer: coarse)').matches;
+      const noHover        = matchMedia('(hover: none)').matches;
+      const anyCoarse      = matchMedia('(any-pointer: coarse)').matches;
+
+      const touchPoints    = navigator.maxTouchPoints || 0;
+      const ua             = navigator.userAgent || '';
+      const uaIsMobile     = /Android|iPhone|iPad|iPod/i.test(ua);
+      const uaCHMobile     = navigator.userAgentData?.mobile === true;
+
+      const isStandalone   = matchMedia('(display-mode: standalone)').matches;
+
+      // “スマホっぽい”を多数決で
+      const votes = [
+        isSmallViewport, isCoarsePointer, noHover, anyCoarse,
+        touchPoints > 0, uaIsMobile, uaCHMobile, isStandalone
+      ].filter(Boolean).length;
+
+      const isProbablyMobile = votes >= 3; // しきい値は2?4で調整
+
+      // 参考: “PCっぽさ”
+      const isProbablyDesktop =
+        matchMedia('(pointer: fine)').matches &&
+        matchMedia('(hover: hover)').matches &&
+        !isSmallViewport;
+
+      return { isProbablyMobile, isProbablyDesktop };
+    }
+    /* =============================== 認証＆従業員 =============================== */
+    async function loadCurrentUserAndEmployees(){
+      const { data:{ session } } = await supabase.auth.getSession();
+      const email = session?.user?.email ?? null;
+      const { data: emps, error } = await supabase
+        .from('employees')
+        .select('id,name,email,department,note,row_index,is_admin,is_active')
+        .order('row_index', { ascending:true })
+        .order('name', { ascending:true });
+      if(error) throw error;
+      employeesAll = emps || [];
+      employeesVisible = employeesAll.filter(e => e.is_active !== false);
+      const me = employeesAll.find(e => (e.email||'').toLowerCase() === (email||'').toLowerCase());
+      currentUser = {
+        email,
+        employee_id: me?.id ?? null,
+        department: me?.department ?? null,
+        is_active: !!me && me.is_active !== false,
+        is_admin: !!me?.is_admin,     // ★ これを入れる
+      };
+      return currentUser;
+    }
+
+    /* =============================== 月データ取得（既存APIの1ヶ月単位） =============================== */
+    function normalizeSchedules(json){
+      // サーバが {days, rows} を返す前提（desktop版互換）
+      if (json && Array.isArray(json.rows)) {
+        const arr=[];
+        for (const row of json.rows){
+          const emp = row.employee_name || row.name || '（未割当）';
+          const cells = row.cells || {};
+          for(const k of Object.keys(cells)){
+            const d = String(k).slice(0,10);
+            const c = cells[k]||{};
+            const push = (txt, slot, hour)=>{
+              const t = (txt??'').toString().trim(); if(!t) return;
+              arr.push({
+                employee_name: emp,
+                employee_id: row.employee_id,
+                date: d,
+                slot,
+                title: t,
+                startHour: hour
+              });
+            };
+            push(c.am, 'am', 9);
+            push(c.pm, 'pm', 13);
+          }
+        }
+        return arr;
+      }
+      return [];
+    }
+
+    async function fetchMonthData(ym, token){
+      if(monthCache.has(ym)) return monthCache.get(ym);
+      const ids = employeesVisible.map(e=>e.id).filter(v=>v!=null);
+      const qsEmp = ids.length ? `&emp_ids=${encodeURIComponent(ids.join(','))}` : '';
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/schedules-get?month=${encodeURIComponent(ym)}${qsEmp}&_=${Date.now()}`, {
+        headers:{ Authorization:`Bearer ${token}` }, cache:'no-store'
+      });
+      const json = await res.json();
+      const items = normalizeSchedules(json);
+      monthCache.set(ym, items);
+      return items;
+    }
+    // =============================== 保存API（アップサート/削除） ===============================
+    async function upsertScheduleItems(items){
+      if (!Array.isArray(items) || items.length === 0) return { ok:true, upserts:0, deletes:0 };
+      const { data:{ session } } = await supabase.auth.getSession();
+      const token = session?.access_token; if(!token) throw new Error('未ログイン');
+      const upserts = [];
+      const deletes = [];
+      for (const it of items) {
+        const employee_id = it?.employee_id;
+        const date = (it?.date||'').toString().slice(0,10);
+        const slot = (it?.slot||'').toString().toLowerCase() === 'pm' ? 'pm' : 'am';
+        const place = (it?.place ?? '').toString().trim();
+        if (!employee_id || !date) continue;
+        if (place) upserts.push({ employee_id, date, slot, place });
+        else deletes.push({ employee_id, date, slot });
+      }
+      // 削除 → 追加の順で反映
+      if (deletes.length){
+        const r = await fetch(`${SUPABASE_URL}/functions/v1/schedules-delete`,{
+          method:'POST', headers:{'Authorization':`Bearer ${token}`,'Content-Type':'application/json'},
+          body: JSON.stringify(deletes)
+        });
+        const j = await r.json().catch(()=>({}));
+        if(!r.ok || !j?.ok) throw new Error(j?.error||`delete HTTP ${r.status}`);
+      }
+      if (upserts.length){
+        const r = await fetch(`${SUPABASE_URL}/functions/v1/schedules-upsert`,{
+          method:'POST', headers:{'Authorization':`Bearer ${token}`,'Content-Type':'application/json'},
+          body: JSON.stringify(upserts)
+        });
+        const j = await r.json().catch(()=>({}));
+        if(!r.ok || !j?.ok) throw new Error(j?.error||`upsert HTTP ${r.status}`);
+      }
+      // 触れた月だけキャッシュ破棄
+      const ymSet = new Set(items.map(it => (it?.date||'').toString().slice(0,7)).filter(Boolean));
+      for (const ym of ymSet) { try { monthCache.delete(ym); } catch {} }
+      window.__lastSaveResult = { ok:true, upserts: upserts.length, deletes: deletes.length, touchedMonths: Array.from(ymSet) };
+      return window.__lastSaveResult;
+    }
+    /* =============================== 行列入替えマトリクス =============================== */
+    // 選択部署の社員だけカラムに並べ、行は日×(午前/午後)
+    function toScheduleForScheduleGrid(items, ym, dept, employeesVisible) {
+      const emps = employeesVisible
+        .filter(e => !dept || String(e.department || '') === String(dept))
+        .sort((a,b) => (a.row_index ?? 0) - (b.row_index ?? 0) || a.name.localeCompare(b.name,'ja'));
+      const employeeNames = emps.map(e => e.name);
+      const memoByName = Object.fromEntries(emps.map(e => [e.name, e.note || '']));
+      // 追加: 自分の列 index（currentUser.employee_id と一致する従業員を探す）
+      const myIndex = (function(){
+        try {
+          const myId = currentUser?.employee_id;
+          if (myId == null) return -1;
+          const i = emps.findIndex(e => String(e.id) === String(myId));
+          return i; // 見つからなければ -1
+        } catch { return -1; }
+      })();
+      // month days: ['YYYY-MM-01', ...]
+      const [y,m] = ym.split('-').map(Number);
+      const last = new Date(y, m, 0).getDate();
+      const mm = String(m).padStart(2,'0');
+      const days = Array.from({ length: last }, (_, i) => `${y}-${mm}-${String(i+1).padStart(2,'0')}`);
+
+      // date/slot ごとに byName を構築
+      const byDateSlot = new Map(); // d -> { AM: {name:txt}, PM: {name:txt} }
+      const ensure = (d) => { if (!byDateSlot.has(d)) byDateSlot.set(d, { AM:{}, PM:{} }); return byDateSlot.get(d); };
+
+      for (const it of items || []) {
+        const d = String(it?.date || '').trim();
+        if (!d) continue;
+        const slot = (String(it?.slot || '').toUpperCase() === 'PM') ? 'PM' : 'AM';
+        const emp = emps.find(e => String(e.id) === String(it.employee_id));
+        if (!emp) continue;
+        const bucket = ensure(d)[slot];
+        const prev = bucket[emp.name] || '';
+        const add = (it.title || '').trim();
+        bucket[emp.name] = prev ? (prev + (add ? '\n' + add : '')) : add;
+      }
+
+      const schedule = [];
+      const rowKeys = [];
+      for (const d of days) {
+        const row = byDateSlot.get(d) || { AM:{}, PM:{} };
+        schedule.push({ date: d, slot: 'AM', byName: row.AM });
+        rowKeys.push({ date: d, slot: 'am' });
+        schedule.push({ date: d, slot: 'PM', byName: row.PM });
+        rowKeys.push({ date: d, slot: 'pm' });
+      }
+
+      const meta = {
+        employees: employeeNames,                    // 表示用（既存）
+        labels: { date:'Date', slot:'Slot', am:'AM', pm:'PM', memo:'' },
+        emps: emps.map(e => ({ id: e.id, name: e.name })), // ★ 保存用：列→社員ID
+        rowKeys,                                     // ★ 保存用：行→{date,slot}
+      };
+      return { meta, schedule, memoByName, myIndex };
+    }
+
+    async function renderGrid(ym, dept){
+      const { access_token: token } = await getActiveSessionOrLogout();
+      showOverlay(true,'読込中...');
+      try {
+        // Simple mode: delegate to separated minimal initializer first
+        if (window.ScheduleGrid && typeof window.ScheduleGrid.init === 'function') {
+          const el = document.getElementById('grid');
+          const env = detectEnvironment();
+          const commonUx = {
+            dataColStart: 2,
+            enableTextFit: true,
+            enableInitialTextFit: true,
+            allowHorizontalWheel: false,
+            autoScrollToToday: true,
+            tym: ym
+          };
+          const desktopUx = {
+            ...commonUx,
+            minPx: GridControl.SHRINK_MIN_PX,
+            enterBehavior: 'down',
+            enableSelectionTracker: true,
+            allowCopyEmptyGuard: true,
+            onChangeCleaner: true,
+            allowPaste: true,
+            editable: true,
+            enableClickOpenEditor: true
+          };
+          const mobileUx = {
+            ...commonUx,
+            minPx: GridControl.SHRINK_MIN_PX,
+            enterBehavior: 'none',
+            enableSelectionTracker: false,
+            allowCopyEmptyGuard: false,
+            onChangeCleaner: false,
+            allowPaste: false,
+            editable: false,
+            enableClickOpenEditor: false
+          };
+          const ux = env.isProbablyMobile ? mobileUx : desktopUx;
+          // 1) APIから月データ取得（既存関数）
+          const items = await fetchMonthData(ym, token);
+
+          // 2) 従業員 → 列見出し、items → schedule に成形
+          const { meta, schedule, memoByName, myIndex } = toScheduleForScheduleGrid(items, ym, dept, employeesVisible);
+          // 3) ScheduleGrid へ投入（第2引数 opts で meta+schedule を渡す）
+          window.GridInstance = window.ScheduleGrid.init(el, { meta, schedule, memoByName, myIndex, isAdmin : currentUser?.is_admin,ym,isProbablyMobile : env.isProbablyMobile}, ux);
+          // 同期: 既存コード互換のため旧グローバルにも保持
+          grid = window.GridInstance;
+          // ★ 保存用メタを保持（getCellKeyFromMeta が使う構造と揃える）
+          currentGridMeta = {
+            emps: meta.emps,         // [{id,name}] 列順
+            rowKeys: meta.rowKeys,   // [{date,slot}] 行順（0=AM,1=PM…）
+          }
+        };
+      } finally {
+        showOverlay(false);
+      }
+    }
+
+    // 現在のセレクト状態に合わせて再描画する
+    async function refreshView({ companyOnly = false } = {}) {
+      const ym   = document.getElementById('monthSelect').value;
+      if (companyOnly) {
+        await renderCompanyList(ym);         // お知らせ（会社予定一覧）だけ更新
+        return;
+      }
+      const dept = document.getElementById('deptSelect').value;
+
+      if (dept === '__TODAY__') {
+        await renderTodayCards();            // 今日の予定カードを更新
+      } else {
+        await renderGrid(ym, dept);          // グリッドを更新
+      }
+      await renderCompanyList(ym);           // ついでにお知らせも更新
+    }
+    /* =============================== 部署・月のUI =============================== */
+    function uniqueDepartments(){
+      const set = new Map(); // 表示名の順を維持
+      for(const e of employeesVisible){
+        const dep = e.department || '';
+        if(!set.has(dep)) set.set(dep, dep);
+      }
+      return Array.from(set.keys());
+    }
+    function fillDepartmentOptions(initDept){
+      const sel = document.getElementById('deptSelect');
+      sel.innerHTML = '';
+
+      // ★ 先頭に「本日の予定一覧」
+      {
+        const op = document.createElement('option');
+        op.value = '__TODAY__';
+        op.textContent = '本日の予定一覧';
+        sel.appendChild(op);
+      }
+
+      // 既存：部署一覧
+      for(const dep of uniqueDepartments()){
+        const op = document.createElement('option');
+        op.value = dep; op.textContent = dep||'(未設定)';
+        if (initDept && String(dep)===String(initDept)) op.selected = true;
+        sel.appendChild(op);
+      }
+      snapshotSelectValues();
+    }
+    function fillMonthOptions(base=new Date()){
+      const months = monthsAround(base, 3, 3);
+      const sel = document.getElementById('monthSelect');
+      sel.innerHTML = '';
+      for(const ym of months){
+        const op = document.createElement('option');
+        op.value = ym; op.textContent = ym;
+        if (ym===ymOf(base)) op.selected = true;
+        sel.appendChild(op);
+      }
+      snapshotSelectValues();
+    }
+
+    /* =============================== 登録パネル =============================== */
+    /* ===== 相互排他トグル ===== */
+    const panels = {
+      notice: { btn: document.getElementById('tglNotice'),  id:'noticePanel',  saveBtn:null },
+      quick:  { btn: document.getElementById('tglQuick'),   id:'quickPanel',  saveBtn:document.getElementById('quickSaveBtn') },
+      memo:   { btn: document.getElementById('tglMemo'),    id:'memoPanel',    saveBtn:document.getElementById('memoSaveBtn') },
+      company:{ btn: document.getElementById('tglCompany'), id:'companyPanel', saveBtn:document.getElementById('companySaveBtn') },
+    };
+
+    function openPanel(key) {
+      // null または undefined の場合 → 全部閉じる
+      if (key == null) {
+        for (const conf of Object.values(panels)) {
+          if (conf.btn) {
+            conf.btn.setAttribute('aria-pressed', 'false');
+            conf.btn.textContent = '＋';
+          }
+          const el = document.getElementById(conf.id);
+          if (el) el.style.display = 'none';
+          if (conf.saveBtn) conf.saveBtn.disabled = true;
+        }
+        // お知らせラベル更新
+        const noticeBtn = document.getElementById('tglNotice');
+        const noticeLabel = noticeBtn ? noticeBtn.nextElementSibling : null;
+        if (noticeLabel) noticeLabel.style.color = '#999';
+        return; // 全閉じ完了
+      }
+
+      // 通常動作：指定キーを開く／閉じる
+      for (const [k, conf] of Object.entries(panels)) {
+        const btn = conf.btn;
+        const panel = document.getElementById(conf.id);
+        const saveBtn = conf.saveBtn;
+
+        const isCurrent = (k === key);
+        const isOpen = btn && btn.getAttribute('aria-pressed') === 'true';
+        const pressed = isCurrent ? !isOpen : false; // 再クリックで閉じる
+
+        if (btn) {
+          btn.setAttribute('aria-pressed', String(pressed));
+          btn.textContent = pressed ? '－' : '＋';
+        }
+        if (panel) panel.style.display = pressed ? '' : 'none';
+        if (saveBtn) saveBtn.disabled = !pressed;
+      }
+
+      // お知らせラベルの色更新
+      const noticeBtn = document.getElementById('tglNotice');
+      const noticeLabel = noticeBtn ? noticeBtn.nextElementSibling : null;
+      if (noticeLabel) {
+        const isOpen = noticeBtn && noticeBtn.getAttribute('aria-pressed') === 'true';
+        noticeLabel.style.color = isOpen ? '#333' : '#999';
+      }
+    }
+
+    // クリック（※「お知らせ」はラベル非ボタン。左の＋/?のみ反応）
+    for(const [k,conf] of Object.entries(panels)){
+      conf.btn?.addEventListener('click', ()=> openPanel(k));
+    }
+
+    /* ===== 役割に応じた可視制御 ===== */
+    // どこかのタイミング(ログイン後/ユーザー読込後)で呼ぶ
+    function applyRoleVisibility(){
+      const { isProbablyMobile } = detectEnvironment();
+      const isActive  = !!currentUser?.is_active;
+      const isAdmin   = !!currentUser?.is_admin;
+
+      // クイック/メモ（非アクティブは非表示）
+      document.getElementById('tglQuick').style.display       = isActive ? '' : 'none';
+      document.getElementById('quickSaveBtn').style.display  = isActive ? '' : 'none';
+      document.getElementById('quickPanel').style.display    = 'none';
+
+      document.getElementById('tglMemo').style.display        = isActive ? '' : 'none';
+      document.getElementById('memoSaveBtn').style.display    = isActive ? '' : 'none';
+      document.getElementById('memoPanel').style.display      = 'none';
+
+      // 会社予定：モバイルは強制非表示（管理者でも）
+      const showCompany = !isProbablyMobile && isAdmin;
+      document.getElementById('tglCompany').style.display     = showCompany ? '' : 'none';
+      document.getElementById('companySaveBtn').style.display= showCompany ? '' : 'none';
+      document.getElementById('companyPanel').style.display   = 'none';
+      document.getElementById('memoTargetSelect').style.display = showCompany ? '' : 'none';
+
+      // 初期の開閉：
+      if (isProbablyMobile) {
+        // モバイル：全部オフ（＝パネル非表示、ボタン無効化）
+        openPanel(null);
+      } else {
+        openPanel('notice');
+      }
+    }
+
+    /* ===== 会社予定一覧（お知らせ）==== */
+    function esc(s){ return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+    async function fetchCompanyEventsForMonth(ym){
+      const [y, m] = ym.split('-').map(Number);
+      const pad = n => String(n).padStart(2,'0');
+      const start = `${y}-${pad(m)}-01`;
+      const endY = (m === 12) ? y + 1 : y;
+      const endM = (m === 12) ? 1 : m + 1;
+      const end = `${endY}-${pad(endM)}-01`;
+
+      const { data, error } = await supabase
+      .from('company_events')
+      .select('id, kind, date, date_end, timestart, timeend, event, memo')
+      // 単日 or 期間イベントの重なりを包含、endは「翌月1日」未満に統一
+      .or(`and(date.gte.${start},date.lt.${end}),and(date.lt.${end},date_end.gte.${start})`)
+      .order('date',{ascending:true})
+      .order('timestart',{ascending:true});
+
+      if (error) throw error;
+      return data || [];
+    }
+
+    async function renderCompanyList(ym){
+      const box = document.getElementById('companyListBody');
+      const { isProbablyMobile } = detectEnvironment();
+      const canDeleteNotice = !!currentUser?.is_admin && !isProbablyMobile;
+      try{
+        const evs = await fetchCompanyEventsForMonth(ym);
+        if(!evs.length){ box.innerHTML = '<p class="muted">該当なし</p>'; return; }
+
+        const notices = evs.filter(e=>e.kind==='notice');
+        const normals = evs.filter(e=>e.kind!=='notice');
+
+        let html='';
+        // お知らせ(優先)
+        for(const e of notices){
+          const del = canDeleteNotice ? `<button class="ev-del" data-ev-id="${e.id}" style="color:#e53935;background:transparent;border:none;cursor:pointer">削除</button>` : '';
+          html += `<div class="ev-item" style="border-left:4px solid #9c27b0;padding-left:8px;margin:6px 0;display:flex;gap:8px;align-items:flex-start;">
+            ${del}<div class="ev-main"><div style="font-weight:700;white-space:pre-wrap">${esc(e.event)}</div>${e.memo?`<div style="white-space:pre-wrap">${esc(e.memo)}</div>`:''}</div>
+          </div>`;
+        }
+        // 通常イベント（開始日～終了日で1行表示。月跨ぎは取得クエリで両月に含まれる）
+        const items = normals.slice().sort((a,b)=>{
+          const ad=(a.date||''); const bd=(b.date||'');
+          if(ad!==bd) return ad.localeCompare(bd);
+          return (a.timestart||'').localeCompare(b.timestart||'');
+        });
+        if(items.length){ html += `<ul style="margin:0 0 8px 16px;padding:0">`; }
+        for (const e of items) {
+          const hasEnd = !!e.date_end && e.date_end !== e.date;
+          const dateLabel = hasEnd ? `${esc(e.date)} ～ ${esc(e.date_end)}` : `${esc(e.date)}`;
+          const t1=e.timestart?e.timestart.slice(0,5):'';
+          const t2=e.timeend?e.timeend.slice(0,5):'';
+          const tt=t1&&t2?`${t1}～${t2}`:(t1||'');
+          const del = canDeleteNotice ? `<button class="ev-del" data-ev-id="${e.id}" style="color:#e53935;background:transparent;border:none;cursor:pointer">削除</button>` : '';
+          html += `<li class="ev-item" style="display:flex;gap:8px;align-items:flex-start;">
+            ${del}<div class="ev-main"><div class="muted">・${dateLabel}</div><strong style="white-space:pre-wrap">${esc(e.event)}</strong> ${tt}${e.memo?`<div class="muted" style="white-space:pre-wrap">${esc(e.memo)}</div>`:''}</div>
+          </li>`;
+        }
+        if(items.length){ html += `</ul>`; }
+        box.innerHTML = html;
+      }catch(e){
+        console.error(e);
+        box.textContent = '読み込みに失敗しました';
+      }
+    }
+
+    // 削除（管理者のみ）
+    async function deleteCompanyEventById(id){
+      const { data:{ session } } = await supabase.auth.getSession();
+      const token=session?.access_token; if(!token) throw new Error('未ログイン');
+      const res=await fetch(`${SUPABASE_URL}/functions/v1/company-events-delete`,{
+        method:'POST',
+        headers:{'Authorization':`Bearer ${token}`,'Content-Type':'application/json'},
+        body:JSON.stringify({ id }), cache:'no-store'
+      });
+      const txt=await res.text(); let j=null; try{ j=JSON.parse(txt);}catch (err) {}
+      if(!res.ok || (j&&j.ok===false)) throw new Error(j?.error||txt||`HTTP ${res.status}`);
+      return j??{};
+    }
+
+    document.getElementById('noticePanel').addEventListener('click', async (e)=>{
+      if (detectEnvironment().isProbablyMobile) return;
+      const btn = e.target instanceof HTMLElement ? e.target.closest('button.ev-del') : null; if(!btn) return;
+      if(!currentUser?.is_admin) return alert('権限がありません');
+      const id = btn.getAttribute('data-ev-id'); if(!id) return;
+      if(!confirm('この書き込みを削除します。よろしいですか？')) return;
+      try{
+        await deleteCompanyEventById(id);
+        await refreshView({ companyOnly: true });
+        alert('削除しました');
+      }catch(err){ alert('削除に失敗しました：'+err.message); }
+    });
+    function toYMD(v){
+      const pad = n => String(n).padStart(2,'0');
+      if (!v) return null;
+      if (v instanceof Date && !isNaN(v)) return `${v.getFullYear()}-${pad(v.getMonth()+1)}-${pad(v.getDate())}`;
+      const s = String(v).trim();
+      if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+      const d = new Date(s); if (!isNaN(d)) return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+      return null;
+    }
+    function normalizeHHMM(raw){
+      const s=String(raw||'').trim(); if(!s) return null;
+      if(/^[0-2]?\d:[0-5]\d$/.test(s)) return s.length===4? '0'+s : s;
+      if(/^\d{4}$/.test(s)){ const hh=+s.slice(0,2), mm=+s.slice(2,4); if(hh>=0&&hh<=23&&mm>=0&&mm<=59) return `${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}`; }
+      return null;
+    }
+
+    async function ensureMyEmployeeId(){
+      if(currentUser.employee_id) return currentUser.employee_id;
+      const { data:{ session } } = await supabase.auth.getSession();
+      if(!session) throw new Error('未ログイン');
+      const { data, error } = await supabase.from('employees').select('id,email').eq('email', session.user.email).maybeSingle();
+      if(error) throw error;
+      if(!data) throw new Error('自分の従業員IDが見つかりません');
+      currentUser.employee_id = data.id;
+      return data.id;
+    }
+
+    // 予定（午前・午後）
+    document.getElementById('quickSaveBtn').addEventListener('click', async ()=>{
+      showOverlay(true,'保存中...');
+      try{
+        const date = toYMD(document.getElementById('qDate').value);
+        if(!date){ alert('日付(YYYY-MM-DD)を入力'); return; }
+        const am = (document.getElementById('qAm').value||'').trim();
+        const pm = (document.getElementById('qPm').value||'').trim();
+        let employee_id;
+        if (currentUser?.is_admin) {
+          const v = document.getElementById('memoTargetSelect')?.value;
+          // 数字変換せず、そのまま文字列を使う
+          employee_id = v ? v : await ensureMyEmployeeId();
+        } else {
+          employee_id = await ensureMyEmployeeId();
+        }
+        const upserts=[], deletes=[];
+        if(am) upserts.push({ employee_id, date, slot:'am', place:am }); else deletes.push({ employee_id, date, slot:'am' });
+        if(pm) upserts.push({ employee_id, date, slot:'pm', place:pm }); else deletes.push({ employee_id, date, slot:'pm' });
+
+        const { data:{ session } } = await supabase.auth.getSession();
+        const token=session?.access_token; if(!token) throw new Error('未ログイン');
+        if(deletes.length){
+          const r=await fetch(`${SUPABASE_URL}/functions/v1/schedules-delete`,{ method:'POST', headers:{'Authorization':`Bearer ${token}`,'Content-Type':'application/json'}, body:JSON.stringify(deletes) });
+          const j=await r.json().catch(()=>({})); if(!r.ok || !j?.ok) throw new Error(j?.error||`HTTP ${r.status}`);
+        }
+        if(upserts.length){
+          const r=await fetch(`${SUPABASE_URL}/functions/v1/schedules-upsert`,{ method:'POST', headers:{'Authorization':`Bearer ${token}`,'Content-Type':'application/json'}, body:JSON.stringify(upserts) });
+          const j=await r.json().catch(()=>({})); if(!r.ok || !j?.ok) throw new Error(j?.error||`HTTP ${r.status}`);
+        }
+        // ★ 追加：当月キャッシュ破棄 → 再描画
+        const ym = (document.getElementById('qDate').value || '').slice(0,7);
+        if (ym) monthCache.delete(ym);
+        await refreshView();
+        alert('更新しました');
+      }catch(e){ alert('保存失敗：'+e.message); } finally {
+        showOverlay(false);
+      }
+    });
+    // メモ
+    document.getElementById('memoSaveBtn').addEventListener('click', async ()=>{
+      showOverlay(true,'保存中...');
+      try{
+        const noteRaw = document.getElementById('qNote')?.value;
+        const note = typeof noteRaw === 'string' ? noteRaw : String(noteRaw ?? '');
+
+        let employee_id;
+        if (currentUser?.is_admin) {
+          const v = (document.getElementById('memoTargetSelect')?.value ?? '').trim();
+          employee_id = v || await ensureMyEmployeeId(); // 型はそのまま
+        } else {
+          employee_id = await ensureMyEmployeeId();      // 型はそのまま
+        }
+
+        try {
+          const opts = Array.from(document.querySelectorAll('#memoTargetSelect option'))
+            .map(o => ({ value: o.value, text: o.textContent }));
+          console.debug('[memo/save] options:', opts);
+        } catch {}
+        console.debug('[memo/save] payload:', { employee_id, type: typeof employee_id, noteType: typeof note, isAdmin: !!currentUser?.is_admin });
+
+        if (employee_id == null || employee_id === '') {
+          alert('対象の従業員IDが不正です');
+          return;
+        }
+
+        const { data:{ session } } = await supabase.auth.getSession();
+        const token=session?.access_token; if(!token) throw new Error('未ログイン');
+        const r = await fetch(`${SUPABASE_URL}/functions/v1/employee-note-update`,{
+          method:'POST',
+          headers:{ 'Authorization':`Bearer ${token}`, 'Content-Type':'application/json' },
+          body: JSON.stringify({ employee_id, note })
+        });
+        const text = await r.text();
+        console.debug('[memo/save] response:', r.status, text);
+        let j=null; try{ j=JSON.parse(text);}catch{}
+        if(!r.ok || j?.ok===false) throw new Error(j?.error||`HTTP ${r.status}`);
+
+        await loadCurrentUserAndEmployees();
+        try { updateMemoTargetUI({ preserveSelection: true }); } catch {}
+        await refreshView();
+        alert('メモを保存しました');
+      }catch(e){ alert('保存失敗: '+ e.message); } finally {
+        showOverlay(false);
+      }
+    });
+    /* ===== 会社予定登録（管理者）===== */
+    document.getElementById('companySaveBtn').addEventListener('click', async ()=>{
+      if(!currentUser?.is_admin) return alert('権限がありません');
+      showOverlay(true,'保存中...');
+      try{
+        const kind = document.getElementById('cKind').value;
+        const date = toYMD(document.getElementById('cDate').value);
+        const date_end = toYMD(document.getElementById('cDateEnd').value);
+        const start = kind==='event' ? normalizeHHMM(document.getElementById('cStart').value) : null;
+        const end   = kind==='event' ? normalizeHHMM(document.getElementById('cEnd').value)   : null;
+        const title = (document.getElementById('cTitle').value||'').trim();
+        const memo  = (document.getElementById('cMemo').value||'').trim();
+        if(!date) return alert('開始日を入力してください');
+        if(!title) return alert('タイトルを入力してください');
+          const { data:{ session } } = await supabase.auth.getSession();
+          const token=session?.access_token; if(!token) throw new Error('未ログイン');
+
+          const r = await fetch(`${SUPABASE_URL}/functions/v1/company-events-upsert`,{
+          method:'POST', headers:{'Authorization':`Bearer ${token}`,'Content-Type':'application/json'},
+          body:JSON.stringify({ kind, date, date_end: date_end||null, timestart:start, timeend:end, event:title, memo })
+        });
+        const j=await r.json().catch(()=>({})); if(!r.ok || j?.ok===false) throw new Error(j?.error||`HTTP ${r.status}`);
+        await refreshView({ companyOnly: true });
+        alert('掲示板に登録しました');
+      }catch(e){ alert('登録失敗：'+e.message); } finally {
+        showOverlay(false);
+      }
+    });
+    document.getElementById('gridSaveBtn')?.addEventListener('click', async () => {
+      if (dirtyCells.size == 0) return;
+
+      showOverlay(true,'保存中...');
+      try {
+        const dataColStart = 2; // C列〜
+        const payload = [];
+        // dirtyCells に入っている座標だけ処理（全部走査でも可）
+        for (const key of dirtyCells) {
+          const [y, x] = key.split(':').map(Number);
+          if (y === 0) continue;             // ← メモ行は対象外
+          if (x < dataColStart) continue;    // ← A,B列は対象外
+          // 値を取得
+          const place = String(grid.getValueFromCoords(x, y) ?? '').trim();
+          // 空文字は「削除扱い」で送るのか、無視するのかはAPI仕様に合わせて調整
+          // ここでは空も送る（サーバー側で空なら削除/NULLにする想定）
+
+          // 行→ date/slot
+          const date = (grid.getValueFromCoords(0, y) || '').toString().trim()
+                      || (grid.getValueFromCoords(0, y-1) || '').toString().trim(); // マージの影響対策
+          const slotRaw = (grid.getValueFromCoords(1, y) || '').toString().trim().toUpperCase();
+          const slot = (slotRaw === 'PM') ? 'pm' : 'am';
+
+          // 列→ employee_id（meta.emps を使う）
+          const empIdx = x - dataColStart;
+          const empId  = String(currentGridMeta?.emps?.[empIdx]?.id ?? '');
+
+          if (!date || !empId) continue;
+
+          payload.push({ employee_id: empId, date, slot, place });
+        }
+
+        if (payload.length === 0) { showOverlay(false); return; }
+
+          console.log(payload)
+        // ★ここでアップサートAPI呼び出し（実装済みの fetch/Function を使う）
+        await upsertScheduleItems(payload); // ← あなたの既存API関数名に合わせて
+
+        // 成功したらダーティをクリア
+        clearAllDirty(true);
+        alert('保存しました：変更'  + `${window.__lastSaveResult?.upserts ?? 0} / 削除 ${window.__lastSaveResult?.deletes ?? 0}`);
+      } catch (err) {
+        alert('保存に失敗しました: ' + (err?.message || err));
+      } finally {
+        showOverlay(false);
+      }
+    });
+
+    /* =============================== 今日の予定 =============================== */
+    function renderTodayCardsFrom(items){
+      const container = document.getElementById('todayCards');
+      container.innerHTML = '';
+
+      const today = JST_NOW.ymd;
+
+      // 今日の (empId -> {am, pm}) を集計
+      const byEmp = new Map();
+      for (const it of items) {
+        if (it.date !== today) continue;
+        if (!byEmp.has(it.employee_id)) byEmp.set(it.employee_id, { am:'', pm:'' });
+        const dst = byEmp.get(it.employee_id);
+        if (it.slot === 'am') dst.am = it.title || '';
+        if (it.slot === 'pm') dst.pm = it.title || '';
+      }
+
+      // 従業員を部署でグルーピング（is_active だけ表示）
+      const byDept = new Map(); // dep -> [employee]
+      for (const e of employeesVisible) {
+        const dep = e.department || '';
+        if (!byDept.has(dep)) byDept.set(dep, []);
+        byDept.get(dep).push(e);
+      }
+
+      // 部署ごとにセクション
+      const frag = document.createDocumentFragment();
+      let depIndex = 0;
+      for (const [dep, list] of byDept) {
+        depIndex++;
+        const colorClass = `dep-${((depIndex - 1) % 8) + 1}`;  // dep-1?dep-8をループ
+
+        // セクション
+        const sec = document.createElement('section');
+        sec.className = `today-section ${colorClass}`;
+
+        const h = document.createElement('h3');
+        h.textContent = dep || '(未設定)';
+        h.classList.add('dep-head');
+        sec.appendChild(h);
+
+        const grid = document.createElement('div');
+        grid.className = 'card-grid';
+
+        // 部署の従業員順（row_index→名前）
+        list.sort((a,b)=>(a.row_index??0)-(b.row_index??0) || a.name.localeCompare(b.name,'ja'));
+
+        for (const e of list) {
+          const sched = byEmp.get(e.id) || { am:'', pm:'' };
+
+          const card = document.createElement('div');
+          card.className = `today-card ${colorClass}`;
+          card.innerHTML = `
+            <div class="row4">
+              <div class="cell">
+                <span class="label">名前</span>
+                <div class="val name">${e.name || ''}</div>
+              </div>
+              <div class="cell">
+                <span class="label">メモ</span>
+                <div class="val memo">${(e.note||'')}</div>
+              </div>
+              <div class="cell am">
+                <span class="label">午前</span>
+                <div class="val">${sched.am || ''}</div>
+              </div>
+              <div class="cell pm">
+                <span class="label">午後</span>
+                <div class="val">${sched.pm || ''}</div>
+              </div>
+            </div>
+          `;
+          grid.appendChild(card);
+        }
+
+        sec.appendChild(grid);
+        frag.appendChild(sec);
+      }
+      container.appendChild(frag);
+    }
+    /** 今日のカード表示：データ読み出し→描画→表示切替 */
+    async function renderTodayCards(){
+      const { access_token: token } = await getActiveSessionOrLogout();
+      showOverlay(true,'読込中...');
+      try {
+        const ym = JST_NOW.ym;// 今日の月
+        // 既存の月データAPIを使って当月の items を取得し、今日だけ抽出
+        const items = await fetchMonthData(ym, token);
+        renderTodayCardsFrom(items);
+
+        currentGridMeta = null;
+        clearAllDirty(true,[]);
+
+        // 表示切替
+        document.getElementById('gridPanel').style.display  = 'none';
+        document.getElementById('todayPanel').style.display = '';
+        snapshotSelectValues();
+      } finally {
+        showOverlay(false);
+      }
+    }
+    /* =============================== 起動 =============================== */
+    document.addEventListener('DOMContentLoaded', async ()=>{
+      // UI 初期組み立て
+      fillMonthOptions(JST_NOW.asDate);
+
+      // 認証状態に応じた表示（モバイルは簡略：未ログインならSupabaseのメール/パスでログイン）
+      const { data:{ session } } = await supabase.auth.getSession();
+      $('#loginPanel').style.display = session ? 'none' : '';
+      $('#appPanel').style.display   = session ? '' : 'none';
+
+      let sessionObj = null;
+      try {
+        sessionObj = await getActiveSessionOrLogout();  // 失効ならここでモーダル表示&throw
+      } catch {
+        // 既に showLoginModal 済み。以降の初期描画は止める
+      }
+      $('#loginPanel').style.display = sessionObj ? 'none' : '';
+      $('#appPanel').style.display   = sessionObj ? '' : 'none';
+
+      if (sessionObj) {
+        await loadCurrentUserAndEmployees();
+        fillDepartmentOptions(currentUser.department);
+        
+        updateMemoTargetUI({ preserveSelection: false });
+        (function bindMemoSelect(){
+          const memoSelect = document.getElementById('memoTargetSelect');
+          if (memoSelect) {
+            memoSelect.addEventListener('change', (event) => {
+              const val = event?.target?.value ?? '';
+              memoTargetEmployeeId = val ? String(val) : null;
+              syncMemoTextarea(memoTargetEmployeeId);
+              try { syncQuickInputs(memoTargetEmployeeId); } catch {}
+            });
+          }
+        })();
+
+        // When date changes, also refresh quick inputs for the selected target
+        (function bindQuickDate(){
+          const qd = document.getElementById('qDate');
+          if (qd) {
+            qd.addEventListener('change', () => {
+              try { syncQuickInputs(memoTargetEmployeeId); } catch {}
+            });
+          }
+        })();
+        
+        // ★ ここを追加：アクティブでないユーザーは
+        // 1) クイック登録を無効化
+        // 2) 部署セレクトを「本日の予定一覧」にしてカード表示へ
+        if (!currentUser.is_active) {
+          const sel = document.getElementById('deptSelect');
+          if (sel) sel.value = '__TODAY__';
+          snapshotSelectValues();
+
+          clearAllDirty(true,[]);
+          await renderTodayCards();
+          document.getElementById('gridPanel').style.display  = 'none';
+          document.getElementById('todayPanel').style.display = '';
+        } else {
+          clearAllDirty(true,[]);
+          const ym = document.getElementById('monthSelect').value;
+          await renderGrid(ym, document.getElementById('deptSelect').value);
+        }
+        (async function afterLoginInit(){
+          // 既存の session チェック後に…
+          try{
+            // 既存 today設定
+            const today = JST_NOW.ymd;
+            const qd = document.getElementById('qDate'); if(qd) qd.value = today;
+
+            applyRoleVisibility();                       // 権限で可視切替
+            renderCompanyList(document.getElementById('monthSelect').value); // お知らせ(一覧)初期描画
+          }catch (err) {}
+        })();
+      }
+
+      // ログイン
+      $('#loginBtn').addEventListener('click', async ()=>{
+        const email = $('#email').value.trim();
+        const password = $('#password').value;
+        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        if(error){ alert('ログイン失敗: '+error.message); return; }
+        location.reload();
+      });
+      // ログアウトボタン処理
+      $('#logoutBtn').addEventListener('click', async () => {
+        try { await supabase.auth.signOut({ scope: 'local' }); } catch (err) {}
+        location.reload();
+      });
+      // 更新ボタン（F5と同じ）
+      $('#refreshBtn').addEventListener('click', () => {
+        location.reload();   // ページ全体をリロード
+      });
+
+      // 月変更
+      $('#monthSelect').addEventListener('change', async ()=>{
+        const monthEl = document.getElementById('monthSelect');
+        const newMonth = monthEl?.value ?? '';
+        if (!confirmDiscardIfDirty()) {
+          if (monthEl) monthEl.value = lastMonthSelectValue;
+          await renderCompanyList(lastMonthSelectValue || (monthEl?.value ?? ''));
+          return;
+        }
+        lastMonthSelectValue = newMonth;
+        const deptValue = $('#deptSelect').value;
+        clearAllDirty(true,[]);
+        if (deptValue === '__TODAY__') {
+          lastDeptSelectValue = deptValue;
+          await renderTodayCards();
+        }else{
+          await renderGrid(newMonth, deptValue);
+        }
+        await renderCompanyList(newMonth);
+        snapshotSelectValues();
+      });
+      snapshotSelectValues();
+    });
+
+    // 部署変更
+    document.getElementById('deptSelect').addEventListener('change', async ()=>{
+      const deptEl = document.getElementById('deptSelect');
+      const val = deptEl?.value ?? '';
+      if (!confirmDiscardIfDirty()) {
+        if (deptEl) deptEl.value = lastDeptSelectValue;
+        return;
+      }
+      lastDeptSelectValue = val;
+
+      if (val === '__TODAY__') {
+        currentGridMeta = null;
+        clearAllDirty(true,[]);
+        await renderTodayCards();  // ← カードモード
+        snapshotSelectValues();
+        return;
+      }
+
+      // ← グリッドモード
+      document.getElementById('todayPanel').style.display = 'none';
+      document.getElementById('gridPanel').style.display  = '';
+      clearAllDirty(true,[]);
+      await renderGrid(document.getElementById('monthSelect').value, val);
+      snapshotSelectValues();
+    });
+    /* ==== Help modal (mobile) ==== */
+    function openHelpModal(){
+      const m = document.getElementById('helpModal');
+      m?.setAttribute('aria-hidden', 'false');
+      document.body.style.overflow = 'hidden';
+    }
+    function closeHelpModal(){
+      const m = document.getElementById('helpModal');
+      m?.setAttribute('aria-hidden', 'true');
+      document.body.style.overflow = '';
+    }
+    document.addEventListener('click', (e)=>{
+      const t = e.target;
+      if (!(t instanceof HTMLElement)) return;
+      if (t.id === 'helpBtn' || t.hasAttribute('data-help-close')) {
+        e.preventDefault();
+      }
+      if (t.id === 'helpBtn') openHelpModal();
+      if (t.hasAttribute('data-help-close')) closeHelpModal();
+    });
+  </script>
+</head>
+<body>
+  <header>
+    <div class="bar">
+      <strong>行動予定表</strong>
+      <span class="grow"></span>
+      <button id="refreshBtn" class="btn">↻</button>
+      <button id="helpBtn" class="btn">？</button>
+      <button id="logoutBtn" class="btn">✕</button>
+    </div>
+    <div class="bar">
+      <button id="gridSaveBtn" class="btn btn-primary" type="button" style="display:none;">保存</button>
+      <span id="dirtyBadge" class="dirty-badge">0</span>
+      <label class="muted">月</label>
+      <select id="monthSelect"></select>
+      <label class="muted">部署</label>
+      <select id="deptSelect" class="grow"></select>
+    </div>
+  </header>
+
+  <!-- 未ログイン時 -->
+  <div id="loginPanel" class="panel" style="display:none;">
+    <div class="row">
+      <input id="email" type="email" placeholder="you@example.com" inputmode="email" autocomplete="username" />
+      <input id="password" type="password" placeholder="パスワード" autocomplete="current-password" />
+      <button id="loginBtn" class="btn-primary">ログイン</button>
+    </div>
+  </div>
+
+  <!-- アプリ本体 -->
+  <div id="appPanel" style="display:none;">
+   <!-- 相互排他トグル(お知らせ/クイック登録/メモ/会社予定登録) -->
+    <div class="togglebar">
+      <!-- お知らせ：非ボタンはラベルのみ。切替は左の（＋/?）で -->
+      <button id="tglNotice" class="tgl" type="button" aria-pressed="false" data-target="noticePanel">＋</button>
+      <span>お知らせ</span>
+
+      <!-- クイック登録 -->
+      <button id="tglQuick" class="tgl" type="button" aria-pressed="false" data-target="quickPanel">＋</button>
+      <button id="quickSaveBtn" class="btn" type="button">予定</button>
+
+      <!-- メモ -->
+      <button id="tglMemo" class="tgl" type="button" aria-pressed="false" data-target="memoPanel">＋</button>
+      <button id="memoSaveBtn" class="btn" type="button">メモ</button>
+
+      <!-- 会社予定登録（管理者のみ可視） -->
+      <button id="tglCompany" class="tgl" type="button" aria-pressed="false" data-target="companyPanel" style="display:none">＋</button>
+      <button id="companySaveBtn" class="btn" type="button" style="display:none">掲示板</button>
+    </div>
+    <!-- お知らせ（＝会社予定一覧） -->
+    <div id="noticePanel" class="panel quick-section" style="display:none;">
+      <div id="companyListBody" class="muted">読み込み中…</div>
+    </div>
+
+    <!-- クイック登録 -->
+    <div id="quickPanel" class="panel quick-section" style="display:none;">
+      <div class="row">
+        <label>日付</label>
+        <input id="qDate" type="date" />
+      </div>
+      <div class="row" style="margin-top:8px;">
+        <input id="qAm" type="text" placeholder="午前（例：現場A）" style="flex:1 1 200px;">
+      </div>
+      <div class="row" style="margin-top:8px;">
+        <input id="qPm" type="text" placeholder="午後（例：現場B）" style="flex:1 1 200px;">
+      </div>
+    </div>
+
+    <!-- メモ -->
+    <div id="memoPanel" class="panel quick-section" style="display:none;">
+      <div id="memoTargetWrap" class="row" style="gap:6px;margin-bottom:6px;display:none;">
+        <select id="memoTargetSelect" style="min-width:160px;"></select>
+      </div>
+      <textarea id="qNote" placeholder="メモ（全月共通）" style="width:100%;min-height:70px;"></textarea>
+    </div>
+
+    <!-- 会社予定登録（管理者のみ可視） -->
+    <div id="companyPanel" class="panel quick-section" style="display:none;">
+      <div class="row" style="gap:6px;flex-wrap:wrap;">
+        <select id="cKind" style="min-width:108px;">
+          <option value="event">行事</option>
+          <option value="notice">お知らせ</option>
+        </select>
+        <input id="cDate" type="date">
+        <input id="cDateEnd" type="date" placeholder="終了日(任意)">
+        <input id="cStart" type="text" placeholder="開始 0930/09:30" inputmode="numeric" style="max-width:140px;">
+        <input id="cEnd"   type="text" placeholder="終了 1730/17:30" inputmode="numeric" style="max-width:140px;">
+      </div>
+      <div class="row" style="gap:6px;flex-wrap:wrap;">
+        <input id="cTitle" type="text" placeholder="行事名/タイトル" style="flex:1 1 220px;">
+      </div>
+      <div class="row" style="margin-top:6px;">
+        <textarea id="cMemo" placeholder="備考/内容（改行可）" style="width:100%;min-height:70px;"></textarea>
+      </div>
+    </div>
+    
+    <!-- スケジュール-->
+    <div id="gridPanel" class="panel">
+      <div id="grid"></div>
+    </div>
+  
+    <!-- ★ 本日の予定一覧（カードレイアウト） -->
+    <div id="todayPanel" class="panel" style="display:none;">
+      <div id="todayCards"></div>
+    </div>
+  </div>
+
+  <div id="helpModal" class="help-modal" aria-hidden="true">
+    <div class="help-backdrop" data-help-close></div>
+    <div class="help-panel" role="dialog" aria-modal="true" aria-labelledby="helpTitle">
+      <button class="help-close" type="button" title="閉じる" data-help-close>&times;</button>
+      <h2 id="helpTitle">使い方（モバイル）</h2>
+      <div id="helpBody" class="help-body">
+        <p>※URLや仕様は変更になる可能性があります<br>
+        エクセルとは連動していません、テストデータなので自由に編集可能です<br>
+        本運用時にエクセルの行動予定表を完全に移します<br>
+        ログイン者以外には非公開の情報ですが、安全のため個人情報は保存しないでください<br>
+        <br><strong>動作不良時について</strong><br>
+        ボタンが反応しない・保存出来ない・うまく表示されない などが起こったときは<br>
+        保存をせずに<br>・一度ブラウザを落とす<br>・更新(F5)する<br>・ログアウトして再度ログインする<br>
+        などの対応をお願いします<br>
+        また不具合などあれば岩井に連絡ください。<br>
+        <br><strong>PC操作について</strong><br>
+        セルをクリックすると入力欄が開きます。<br>
+        もしエクセルのように中の文字でなくセルを選択したい場合はクリックを長押ししてください。<br>
+        右クリック操作は可能です。「保存」ボタンを押すと変更が保存されます。<br>
+        ※右クリックメニューの「Save As」はスケジュールの保存とは別の機能なので使わないでください。<br>
+        メモはいままでと違い全ての月で共通です。下のグリット上では編集不可<br>
+        上部メモ登録欄からのみ編集可能です<br>
+        現在は管理者以外は自分の欄以外編集不可です。<br>
+        <br><strong>スマホ操作について</strong><br>
+        セルでの編集不可です<br>
+        上部からのみ編集可能です<br>
+        またiOSはブラウザ下部のボタンからホーム画面に追加することで<br>
+        上下のノッチ・URL欄が無い状態での表示が可能です<br>
+        <br><strong>管理者向け設定について</strong><br>管理者は全員のスケジュール・メモを編集可能になっています<br>さらに上部の掲示板入力欄からお知らせや行事の登録・削除が可能です。<br>「掲示板」ボタンの左隣の「＋」または「－」ボタンで入力欄を開閉できます。<br>入力欄に予定を入れて「掲示板」ボタンを押すと保存されます。<br>削除は削除したい内容の左隣の「削除」のボタンを押してください。<br>
+        掲示板入力欄詳細<br>・種別(必須)-お知らせか行事か選択出来ます。お知らせなら優先して上部に表示<br>・開始日(必須)-行事なら開催日、お知らせなら表示期間を入力<br>・終了日-行事なら複数日にわたる場合入力、お知らせなら表示期間の最後を入力<br>・開始-行事のみ入力、特に入力しなくてもOK(例：0905もしくは9:03)<br>・終了-行事のみ入力、特に入力しなくてもOK(例：0905もしくは9:03)<br>・行事名タイトル(必須)-改行不可<br>・備考内容-改行可能、お知らせの場合は必須<br>
+      </div>
+    </div>
+  </div>
+  <div id="scheduleOverlay" class="schedule-overlay">
+    <div class="overlay-text">処理中...</div>
+  </div>
+  <footer></footer>
+</body>
+</html>
+
+
+
 

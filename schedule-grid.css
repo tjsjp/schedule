@@ -1,0 +1,96 @@
+/* Grid container sizing */
+#grid {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+#grid.is-mobile .jexcel {
+  width: 100% !important;
+  max-width: 100% !important;
+  position: relative
+}
+
+/* Day highlights */
+.ht-today{ background:#fff9db !important; }
+.ht-sat  { background:#e6ffed !important; }
+.ht-sun, .ht-holiday{ background:#ffe5e5 !important; }
+
+/* AM/PM の間にごく薄いセパレーター（低優先度） */
+.jexcel_content .ht-row-am {
+  border-top: 3px solid rgba(0,0,0,0.12);
+}
+
+/* 擬似要素を置けるように */
+.jexcel td { position: relative; }
+/* Dirty cell marker */
+.dirty-cell::after{
+  content: "";
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ff7043;                /* オレンジ */
+  box-shadow: 0 0 0 1.5px #fff;       /* 背景に埋もれない縁取り */
+  pointer-events: none;
+  z-index: 2;                          /* セル内容より前に */
+}
+/* ダーティ：左端に細い帯（選択背景に負けにくい） */
+.dirty-cell::before{
+  content: "";
+  position: absolute;
+  top: 0; bottom: 0; left: 0;
+  width: 3px;
+  background: #ff7043;
+  opacity: 0.95;
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* Stronger readonly color */
+.jexcel .readonly {
+  color: #555 !important;
+  background-color: #fafafa;
+}
+
+.jexcel .my-col {
+  color: #d32f2f !important;
+  font-weight: 700;
+}
+.jexcel .readonly {
+  color: #555 !important;
+  background-color: #fafafa;
+}
+.jexcel_freezed{
+  z-index: 50;          /* スクロール側より高く */
+  background: #fff;     /* 背景を塗る（後ろが透けないように） */
+}
+/* Mobile-friendly cell behavior */
+.jexcel_content td{
+  white-space: nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+/* Fill handle を最前面に */
+.jexcel .jexcel_corner,
+.jspreadsheet .jexcel_corner,
+.jexcel .jexcel_corner,
+.jspreadsheet .jexcel_corner {
+z-index: 9999 !important;
+pointer-events: auto;
+}
+
+/* 選択枠も前面（必要なら） */
+#grid .jexcel .jexcel_selection,
+#grid .jspreadsheet .jexcel_selection,
+.jexcel .jexcel_selection,
+.jspreadsheet .jexcel_selection {
+z-index: 9998 !important;
+pointer-events: none;
+}
