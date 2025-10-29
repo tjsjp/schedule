@@ -38,6 +38,7 @@
     }
     header{ position:sticky; top:0; z-index:100; background:#fff; border-bottom:1px solid #e5e5e5; padding-top: calc(8px + var(--safe-top));}
     .bar{ display:flex; gap:8px; align-items:center; padding:8px var(--pad); flex-wrap:wrap; }
+    .selectbar{ display:flex; gap:8px; align-items:center; padding:8px var(--pad); flex-wrap:nowrap; }
     .grow{ flex:1 1 auto; }
     select, input, button, textarea{
       font:inherit;
@@ -1453,7 +1454,7 @@
 </head>
 <body>
   <header>
-    <div class="bar" style="white-space: nowrap;">
+    <div class="selectbar">
       <button id="gridSaveBtn" class="btn btn-primary" type="button" style="display:none;">保存</button>
       <span id="dirtyBadge" class="dirty-badge">0</span>
       <label class="muted">月</label>
