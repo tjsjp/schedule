@@ -148,7 +148,12 @@
       allowDeleteColumn: false,
       allowRenameColumn: false,
       allowMoveColumn: false,
+      allowExport: false,
       columnSorting: false,
+      text: {
+        copy: 'コピー',
+        paste: '貼り付け'
+      },
       updateTable: (el, cell, x, y, source, value) => {
         if (y === 0) {
           cell.classList.add('readonly');

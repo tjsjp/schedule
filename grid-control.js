@@ -1,4 +1,4 @@
-(function () {
+﻿(function () {
 
   /* ================================ JSS 共通UXユーティリティ ================================ */
 
@@ -384,106 +384,50 @@ function __todayYmdLocal() { return new Date().toLocaleDateString('sv-SE', { tim
       if (typeof origEnd === 'function') try { origEnd.call(this, el, cell, x, y, save); } catch {}
     };
 
-    // -------- Enter フォールバック（保険）
-    if (!window.__JSS_DOC_ENTER_INSTALLED__) {
-      window.__JSS_DOC_ENTER_INSTALLED__ = true;
-      document.addEventListener('keydown', (ev) => {
-        if (ev.key !== 'Enter' || ev.altKey) return;
-        const t = ev.target;
-        const inGrid = container.contains(t);
-        const isEditor = t.matches?.('textarea, input, [contenteditable="true"]');
-        if (!inGrid || !isEditor) return;
-
-        try {
-          const td = t.closest('td');
-          if (td) applyShrinkToFit && applyShrinkToFit(td);
-        } catch {}
-
-        ev.preventDefault(); ev.stopPropagation(); ev.stopImmediatePropagation();
-        try { jss.closeEditor && jss.closeEditor(t.closest('td') || null, true); } catch {}
-        try { jss.closeEditor && jss.closeEditor(); } catch {}
-
-        const s = (typeof jss.getSelected === 'function') ? jss.getSelected() : null;
-        const ed = s && s.length >= 2 ? { x:Number(s[0]), y:Number(s[1]) } : (jss._editing || null);
-        if (!ed) return;
-
-        const mode = jss._enterBehavior || 'down';
-        moveAndEdit(ed, mode);
-      }, true);
-    }
-
     // -------- Delete / Backspace：非編集中＆選択中 → 一括クリア → 即編集（強制適用）
-    (function bindClearOnDelete() {
-      if (jss._clearOnDeleteInstalled) return;
-      jss._clearOnDeleteInstalled = true;
+    (function bindDeleteOpenToEdit() {
+      if (jss._deleteOpenInstalled) return;
+      jss._deleteOpenInstalled = true;
 
-      const root = container.querySelector('.jexcel_content') || container;
-
-      const getSelRect = () => {
-        if (typeof jss.getSelected === 'function') {
-          const sel = jss.getSelected();
-          if (Array.isArray(sel)) {
-            if (sel.length >= 4) return { x1:+sel[0], y1:+sel[1], x2:+sel[2], y2:+sel[3] };
-            if (sel.length >= 2) return { x1:+sel[0], y1:+sel[1], x2:+sel[0], y2:+sel[1] };
-          }
-        }
-        const s = jss._lastSel;
-        return s ? { x1:+s.x1, y1:+s.y1, x2:+s.x2, y2:+s.y2 } : null;
-      };
-
-      let inComposition = false;
-      document.addEventListener('compositionstart', () => inComposition = true, true);
-      document.addEventListener('compositionend',   () => inComposition = false, true);
-
-      const handler = (ev) => {
-        // IME合成中/編集中はスルー
-        if (inComposition) return;
+      const keyHandler = (ev) => {
+        if (ev.isComposing) return;
         if (jss._editing) return;
 
-        // 入力系フォーカスなら尊重
+        const isDel = ev.key === 'Delete';
+        const isBS  = ev.key === 'Backspace' && !ev.metaKey && !ev.ctrlKey && !ev.altKey && !ev.shiftKey;
+        if (!isDel && !isBS) return;
+
         const t = ev.target;
         if (t && (t.isContentEditable || /^(input|textarea|select)$/i.test(t.tagName))) return;
         if (!container.contains(document.activeElement)) return;
 
-        const isDelete = ev.key === 'Delete';
-        const isBack   = ev.key === 'Backspace' && !ev.metaKey && !ev.ctrlKey && !ev.altKey && !ev.shiftKey;
-        if (!isDelete && !isBack) return;
+        // アンカーセル（最優先は getSelected）
+        let r = jss._lastSel;
+        if(!r) return;
 
-        const r = getSelRect(); if (!r) return;
+        let td = null;
+        try { td = jss.getCellFromCoords(r.x1, r.y1); } catch {}
+        if (!td || td.classList.contains('readonly')) return;
 
-        // 他ハンドラより先に確定
-        ev.preventDefault();
-        ev.stopPropagation();
-        if (ev.stopImmediatePropagation) ev.stopImmediatePropagation();
+        // 履歴戻り対策や他ハンドラ先行を防ぐため capture で抑止
+        ev.preventDefault(); ev.stopPropagation(); ev.stopImmediatePropagation?.();
 
-        const x1 = Math.min(r.x1, r.x2), y1 = Math.min(r.y1, r.y2);
-        const x2 = Math.max(r.x1, r.x2), y2 = Math.max(r.y1, r.y2);
-        const startCol = jss._uxDataColStart ?? dataColStart ?? 0;
-
-        // 一括クリア（メタ列/readonlyは除外）
-        for (let y = y1; y <= y2; y++) {
-          for (let x = x1; x <= x2; x++) {
-            if (x < startCol) continue;
+        for (let y = r.y1; y <= r.y2; y++) {
+          for (let x = r.x1; x <= r.x2; x++) {
             try {
               const td = jss.getCellFromCoords(x, y);
-              if (td && td.classList.contains('readonly')) continue;
+              if (!td || td.classList.contains('readonly')) continue;
               jss.setValueFromCoords(x, y, '');
+              // 見た目の整合（必要なら）
+              try { applyShrinkToFit && applyShrinkToFit(td); } catch {}
             } catch {}
           }
         }
-
-        // 直後にアンカーセルを編集
-        requestAnimationFrame(() => {
-          try {
-            const td = jss.getCellFromCoords(x1, y1);
-            if (td && !td.classList.contains('readonly')) jss.openEditor(td);
-          } catch {}
-        });
+        try { jss.openEditor(td); } catch {}
       };
 
-      // 競合回避：document と grid 内の両方でキャプチャ段階フック
-      document.addEventListener('keydown', handler, true);
-      root.addEventListener('keydown', handler, true);
+      // Backspace のナビゲーション防止も兼ねて capture で
+      document.addEventListener('keydown', keyHandler, true);
     })();
   }
 
@@ -698,11 +642,13 @@ function __todayYmdLocal() { return new Date().toLocaleDateString('sv-SE', { tim
 
     const prev = jss.options.onselection;
     jss.options.onselection = function(el, x1, y1, x2, y2) {
+      // 旧ハンドラを先に（または後に）呼ぶかは要件次第
+      if (typeof prev === 'function') {
+        try { prev.call(this, el, x1, y1, x2, y2); }
+        catch (e) { /* console.warn('onselection error:', e); */ }
+      }
       jss._selActive = true;
       jss._lastSel = { x1, y1, x2, y2 };
-      if (typeof prev === 'function') {
-        try { prev(el, x1, y1, x2, y2); } catch {}
-      }
     };
   }
 
