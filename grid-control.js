@@ -5,7 +5,7 @@
   // 最小フォント(既存のものを流用)
   const SHRINK_MIN_PX = 9;
   const CLAMP_NO = 2;
-  const LONG_MS = 300;
+  const LONG_MS = 270;
   const cleanCellText = (raw) => {
     if (raw == null) return '';
     let s = String(raw);
