@@ -294,6 +294,8 @@
     function updateDirtyBadge() {
       const badge = document.getElementById('dirtyBadge');
       const saveBtn = document.getElementById('gridSaveBtn');
+      const helpBtn = document.getElementById('helpBtn');
+      const logoutBtn = document.getElementById('logoutBtn');
       const count = dirtyCells.size;
       const { isProbablyMobile } = detectEnvironment();
 
@@ -304,6 +306,12 @@
       }
       if (saveBtn) {
         saveBtn.style.display = isProbablyMobile ? 'none' : 'inline-flex';
+      }
+      if (helpBtn) {
+        helpBtn.style.display = isProbablyMobile ? 'none' : 'inline-flex';
+      }
+      if (logoutBtn) {
+        logoutBtn.style.display = isProbablyMobile ? 'none' : 'inline-flex';
       }
     }
 
@@ -1445,7 +1453,7 @@
 </head>
 <body>
   <header>
-    <div class="bar">
+    <div class="bar" style="white-space: nowrap;">
       <button id="gridSaveBtn" class="btn btn-primary" type="button" style="display:none;">保存</button>
       <span id="dirtyBadge" class="dirty-badge">0</span>
       <label class="muted">月</label>
@@ -1574,8 +1582,8 @@
         セルでの編集不可<br>
         上部からのみ編集可能です<br>
         <br>PC・スマホ両方でアプリ化可能です<br>
-        PCはアドレスバー右端の「行動予定表をインストール」(Edge推奨)<br>
-        iOSはブラウザ下部のボタンから「ホーム画面に追加」<br>
+        PCはアドレスバー右端の「行動予定表をインストール」<br>
+        OSはブラウザ下部のボタンから「ホーム画面に追加」<br>
         上記の操作で上下のノッチ・URL欄が無い状態での表示が可能です<br>
         <br><strong>管理者向け設定について</strong><br>管理者は全員のスケジュール・メモを編集可能になっています<br>さらに上部の掲示板入力欄からお知らせや行事の登録・削除が可能です。<br>「掲示板」ボタンの左隣の「＋」または「－」ボタンで入力欄を開閉できます。<br>入力欄に予定を入れて「掲示板」ボタンを押すと保存されます。<br>削除は削除したい内容の左隣の「削除」のボタンを押してください。<br>
         掲示板入力欄詳細<br>・種別(必須)-お知らせか行事か選択出来ます。お知らせなら優先して上部に表示<br>・開始日(必須)-行事なら開催日、お知らせなら表示期間を入力<br>・終了日-行事なら複数日にわたる場合入力、お知らせなら表示期間の最後を入力<br>・開始-行事のみ入力、特に入力しなくてもOK(例：0905もしくは9:03)<br>・終了-行事のみ入力、特に入力しなくてもOK(例：0905もしくは9:03)<br>・行事名タイトル(必須)-改行不可<br>・備考内容-改行可能、お知らせの場合は必須<br>
@@ -1588,7 +1596,3 @@
   <footer></footer>
 </body>
 </html>
-
-
-
-
