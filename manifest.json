@@ -1,21 +1,20 @@
 {
   "name": "行動予定表",
   "short_name": "行動予定表",
-  "start_url": "https://tjsjp.github.io/schedule/index.html",
+  "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#ffffff",
   "theme_color": "#1976d2",
   "icons": [
     {
-      "src": "https://tjsjp.github.io/schedule/favicon192x192.png",
+      "src": "./favicon192x192.png",
       "sizes": "192x192",
       "type": "image/png"
     },
     {
-      "src": "https://tjsjp.github.io/schedule/favicon.png",
+      "src": "./favicon.png",
       "sizes": "512x512",
       "type": "image/png"
     }
   ]
-
 }
