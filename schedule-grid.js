@@ -1,6 +1,6 @@
 (function () {
   'use strict';
-  
+
   function toExcelAddr(colIndex, rowIndex) {
     // 0-based col/row -> Excel style (A1, A2, ...)
     let n = colIndex + 1;
