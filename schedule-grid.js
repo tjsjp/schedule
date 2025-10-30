@@ -140,7 +140,7 @@
       freezeColumns: 2,          // keep Date/Slot frozen on the left
       mergeCells: merges,        // merge Date cells per day (2 rows)
       tableOverflow: true,
-      tableHeight: '60vh',
+      tableHeight: '70vh',
       tableWidth: '100%',
       allowInsertRow: false,
       allowDeleteRow: false,
