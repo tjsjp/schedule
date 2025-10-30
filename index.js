@@ -13163,7 +13163,7 @@ if (! jSuites && typeof(require) === 'function') {
                     if (i > 0) {
                         // Must check if the previous column is hidden or not to determin whether the width shoule be added or not!
                         if (obj.options.columns[i-1].type !== "hidden") {
-                            width += parseInt(obj.options.columns[i-1].width-50);
+                            width += parseInt(obj.options.columns[i-1].width-1);
                         }
                     }
                     obj.headers[i].classList.add('jexcel_freezed');
@@ -14991,4 +14991,5 @@ if (! jSuites && typeof(require) === 'function') {
     }
 
     return jexcel;
+
 })));
