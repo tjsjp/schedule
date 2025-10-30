@@ -94,3 +94,14 @@ pointer-events: auto;
 z-index: 9998 !important;
 pointer-events: none;
 }
+
+.jexcel_row{
+  background-color: #fafafa !important;
+  color: #fafafa !important;
+  border: #fafafa !important;
+}
+.jexcel_selectall{
+  background-color: #fafafa !important;
+  color: #fafafa !important;
+  border: #fafafa !important;
+}
