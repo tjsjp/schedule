@@ -150,6 +150,7 @@
       allowMoveColumn: false,
       allowExport: false,
       columnSorting: false,
+      about: false,
       text: {
         copy: 'コピー',
         paste: '貼り付け'
