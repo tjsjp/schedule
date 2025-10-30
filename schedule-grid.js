@@ -108,8 +108,8 @@
     };
     // Columns: 2 frozen meta columns + employees
     const columns = [
-      { title: meta.labels.date, type: 'text', readOnly: true, width: (opts?.isProbablyMobile ? 30 : 35)},
-      { title: meta.labels.slot, type: 'text', readOnly: true, width: (opts?.isProbablyMobile ? 30 : 35)},
+      { title: meta.labels.date, type: 'text', readOnly: true, width:(opts?.isProbablyMobile ? 30 : 35)},
+      { title: meta.labels.slot, type: 'text', readOnly: true, width: 35},
       ...meta.employees.map((name) => ({
         title: name,
         type: 'text',
