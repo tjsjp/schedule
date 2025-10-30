@@ -682,7 +682,7 @@
 
       const meta = {
         employees: employeeNames,                    // 表示用（既存）
-        labels: { date:'Date', slot:'Slot', am:'AM', pm:'PM', memo:'' },
+        labels: { date:'D', slot:'S', am:'AM', pm:'PM', memo:'' },
         emps: emps.map(e => ({ id: e.id, name: e.name })), // ★ 保存用：列→社員ID
         rowKeys,                                     // ★ 保存用：行→{date,slot}
       };
@@ -1597,5 +1597,6 @@
   <footer></footer>
 </body>
 </html>
+
 
 
