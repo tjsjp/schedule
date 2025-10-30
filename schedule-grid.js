@@ -90,8 +90,8 @@
         dates: [],
         // labels
         labels: {
-          date: (opts?.isProbablyMobile ? 'D' : 'Date'),
-          slot: (opts?.isProbablyMobile ? 'S' : 'Slot'),
+          date: 'Date',
+          slot: 'Slot',
           am: 'AM',
           pm: 'PM',
           topLeft: '',
