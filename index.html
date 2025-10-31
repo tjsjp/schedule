@@ -1482,7 +1482,7 @@
     <div class="togglebar">
       <!-- お知らせ：非ボタンはラベルのみ。切替は左の（＋/?）で -->
       <button id="tglNotice" class="tgl" type="button" aria-pressed="false" data-target="noticePanel">＋</button>
-      <span>お知らせ</span>
+      <span>掲示板</span>
 
       <!-- クイック登録 -->
       <button id="tglQuick" class="tgl" type="button" aria-pressed="false" data-target="quickPanel">＋</button>
@@ -1494,7 +1494,7 @@
 
       <!-- 会社予定登録（管理者のみ可視） -->
       <button id="tglCompany" class="tgl" type="button" aria-pressed="false" data-target="companyPanel" style="display:none">＋</button>
-      <button id="companySaveBtn" class="btn" type="button" style="display:none">掲示板</button>
+      <button id="companySaveBtn" class="btn" type="button" style="display:none">掲示板登録</button>
     </div>
     <!-- お知らせ（＝会社予定一覧） -->
     <div id="noticePanel" class="panel quick-section" style="display:none;">
@@ -1586,7 +1586,7 @@
         PCはアドレスバー右端の「行動予定表をインストール」<br>
         OSはブラウザ下部のボタンから「ホーム画面に追加」<br>
         上記の操作で上下のノッチ・URL欄が無い状態での表示が可能です<br>
-        <br><strong>管理者向け設定について</strong><br>管理者は全員のスケジュール・メモを編集可能になっています<br>さらに上部の掲示板入力欄からお知らせや行事の登録・削除が可能です。<br>「掲示板」ボタンの左隣の「＋」または「－」ボタンで入力欄を開閉できます。<br>入力欄に予定を入れて「掲示板」ボタンを押すと保存されます。<br>削除は削除したい内容の左隣の「削除」のボタンを押してください。<br>
+        <br><strong>管理者向け設定について</strong><br>管理者は全員のスケジュール・メモを編集可能になっています<br>さらに上部の掲示板登録の入力欄からお知らせや行事の登録・削除が可能です。<br>「掲示板登録」ボタンの左隣の「＋」または「－」ボタンで入力欄を開閉できます。<br>入力欄に予定を入れて「掲示板」ボタンを押すと保存されます。<br>削除は削除したい内容の左隣の「削除」のボタンを押してください。<br>
         掲示板入力欄詳細<br>・種別(必須)-お知らせか行事か選択出来ます。お知らせなら優先して上部に表示<br>・開始日(必須)-行事なら開催日、お知らせなら表示期間を入力<br>・終了日-行事なら複数日にわたる場合入力、お知らせなら表示期間の最後を入力<br>・開始-行事のみ入力、特に入力しなくてもOK(例：0905もしくは9:03)<br>・終了-行事のみ入力、特に入力しなくてもOK(例：0905もしくは9:03)<br>・行事名タイトル(必須)-改行不可<br>・備考内容-改行可能、お知らせの場合は必須<br>
       </div>
     </div>
@@ -1597,6 +1597,7 @@
   <footer></footer>
 </body>
 </html>
+
 
 
 
