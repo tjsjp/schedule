@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿﻿<!DOCTYPE html>
 <head>
   <meta charset="UTF-8">
   <meta name="mobile-web-app-capable" content="yes">
@@ -215,6 +215,15 @@
     let lastDeptSelectValue = '';
     let lastMonthSelectValue = '';
     let memoTargetEmployeeId = null;
+    const CUSTOM_KEY = 'schedulesApp:customEmployeeIds';
+    function getSavedCustomIds() {
+      try { return JSON.parse(localStorage.getItem(CUSTOM_KEY) || '[]').map(String); } catch { return []; }
+    }
+    function setSavedCustomIds(ids) {
+      const uniqueIds = Array.from(new Set((ids || []).map(String))).filter(Boolean);
+      localStorage.setItem(CUSTOM_KEY, JSON.stringify(uniqueIds));
+    }
+    function hasSavedCustom() { return getSavedCustomIds().length > 0; }
     const JP_CAL_OPTS = {
       format:'YYYY-MM-DD', firstDay:0,
       months:['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'],
@@ -301,6 +310,7 @@
       const badge = document.getElementById('dirtyBadge');
       const saveBtn = document.getElementById('gridSaveBtn');
       const helpBtn = document.getElementById('helpBtn');
+      const customBtn = document.getElementById('customBtn');
       const logoutBtn = document.getElementById('logoutBtn');
       const count = dirtyCells.size;
       const { isProbablyMobile } = detectEnvironment();
@@ -315,6 +325,9 @@
       }
       if (helpBtn) {
         helpBtn.style.display = isProbablyMobile ? 'none' : 'inline-flex';
+      }
+      if (customBtn) {
+        customBtn.style.display = isProbablyMobile ? 'none' : 'inline-flex';
       }
     }
 
@@ -636,9 +649,12 @@
     /* =============================== 行列入替えマトリクス =============================== */
     // 選択部署の社員だけカラムに並べ、行は日×(午前/午後)
     function toScheduleForScheduleGrid(items, ym, dept, employeesVisible) {
-      const emps = employeesVisible
-        .filter(e => !dept || String(e.department || '') === String(dept))
-        .sort((a,b) => (a.row_index ?? 0) - (b.row_index ?? 0) || a.name.localeCompare(b.name,'ja'));
+      const savedCustomIds = getSavedCustomIds();
+      const base = employeesVisible.slice();
+      const emps = (dept === '__CUSTOM__'
+          ? base.filter(e => e && e.id != null && savedCustomIds.includes(String(e.id)))
+          : base.filter(e => !dept || String(e.department || '') === String(dept))
+        ).sort((a,b) => (a.row_index ?? 0) - (b.row_index ?? 0) || a.name.localeCompare(b.name,'ja'));
       const employeeNames = emps.map(e => e.name);
       const memoByName = Object.fromEntries(emps.map(e => [e.name, e.note || '']));
       // 追加: 自分の列 index（currentUser.employee_id と一致する従業員を探す）
@@ -776,7 +792,7 @@
       const sel = document.getElementById('deptSelect');
       sel.innerHTML = '';
 
-      // ★ 先頭に「本日の予定一覧」
+      // 先頭に「本日の予定一覧」
       {
         const op = document.createElement('option');
         op.value = '__TODAY__';
@@ -784,13 +800,22 @@
         sel.appendChild(op);
       }
 
-      // 既存：部署一覧
+      // ここに「カスタム表示」を（保存がある場合のみ）追加
+      if (hasSavedCustom()) {
+        const op = document.createElement('option');
+        op.value = '__CUSTOM__';
+        op.textContent = 'カスタム表示';
+        sel.appendChild(op);
+      }
+
+      // 部署一覧
       for(const dep of uniqueDepartments()){
         const op = document.createElement('option');
         op.value = dep; op.textContent = dep||'(未設定)';
         if (initDept && String(dep)===String(initDept)) op.selected = true;
         sel.appendChild(op);
       }
+
       snapshotSelectValues();
     }
     function fillMonthOptions(base=new Date()){
@@ -861,6 +886,71 @@
       }
     }
 
+    function openCustomModal() {
+      // リスト描画
+      const listEl = document.getElementById('customList');
+      const selected = new Set(getSavedCustomIds());
+      const items = employeesVisible
+        .filter(e => e && e.id != null)
+        .slice()
+        .sort((a,b) => (a.row_index??0)-(b.row_index??0) || String(a.name||'').localeCompare(String(b.name||''),'ja'));
+      listEl.innerHTML = items.map(e => {
+        const id = String(e.id);
+        const checked = selected.has(id) ? 'checked' : '';
+        return `<label style="display:flex; align-items:center; gap:8px; padding:4px 0;">
+          <input type="checkbox" class="customEmpChk" value="${id}" ${checked}>
+          <span>${e.name}</span>
+        </label>`;
+      }).join('') || '<div class="muted">アクティブな従業員がいません</div>';
+
+      // ハンドラ
+      const saveBtn = document.getElementById('customSaveBtn');
+      saveBtn.onclick = async () => {
+        const ids = Array.from(document.querySelectorAll('.customEmpChk'))
+          .filter(el => el.checked)
+          .map(el => String(el.value));
+        setSavedCustomIds(ids);
+
+        // セレクトの再構築と選択
+        fillDepartmentOptions(currentUser?.department);
+        const sel = document.getElementById('deptSelect');
+        if (ids.length > 0 && sel) {
+          sel.value = '__CUSTOM__';
+          snapshotSelectValues();
+          // カード表示を隠してグリッド描画
+          document.getElementById('todayPanel').style.display = 'none';
+          document.getElementById('gridPanel').style.display  = '';
+          clearAllDirty(true,[]);
+          const ym = document.getElementById('monthSelect').value;
+          await renderGrid(ym, '__CUSTOM__');
+        } else {
+          // 選択なしならカスタムを外したセレクトで現状維持
+          snapshotSelectValues();
+        }
+        closeCustomModal();
+      };
+
+      const m = document.getElementById('customModal');
+      m?.setAttribute('aria-hidden', 'false');
+      document.body.style.overflow = 'hidden';
+    }
+
+    function closeCustomModal(){
+      const m = document.getElementById('customModal');
+      m?.setAttribute('aria-hidden', 'true');
+      document.body.style.overflow = '';
+    }
+
+    // 背景/×ボタン
+    document.addEventListener('click', (e)=>{
+      const t = e.target;
+      if (!(t instanceof HTMLElement)) return;
+      if (t.id === 'customBtn' || t.hasAttribute('data-custom-close')) {
+        e.preventDefault();
+      }
+      if (t.id === 'customBtn') openCustomModal();
+      if (t.hasAttribute('data-custom-close')) closeCustomModal();
+    });
     // クリック（※「お知らせ」はラベル非ボタン。左の＋/?のみ反応）
     for(const [k,conf] of Object.entries(panels)){
       conf.btn?.addEventListener('click', ()=> openPanel(k));
@@ -1351,11 +1441,14 @@
           }
         })();
         
-        // ★ ここを追加：アクティブでないユーザーは
+        const sel = document.getElementById('deptSelect');
+        if (hasSavedCustom()) {
+          if (sel) sel.value = '__CUSTOM__';
+        }
+        // アクティブでないユーザーは
         // 1) クイック登録を無効化
         // 2) 部署セレクトを「本日の予定一覧」にしてカード表示へ
         if (!currentUser.is_active) {
-          const sel = document.getElementById('deptSelect');
           if (sel) sel.value = '__TODAY__';
           snapshotSelectValues();
 
@@ -1482,6 +1575,7 @@
       <select id="monthSelect"></select>
       <select id="deptSelect" class="grow"></select>
       <button id="refreshBtn" class="btn">↻</button>
+      <button id="customBtn" class="btn">★</button>
       <button id="helpBtn" class="btn">？</button>
       <button id="logoutBtn" class="btn">✕</button>
     </div>
@@ -1612,6 +1706,21 @@
         <br><strong>テスト版変更履歴</strong><br>
         今日の予定一覧のカラー表示の調整<br>
         一部ボタン配置の調整<br>
+        カスタム表示機能の追加<br>
+      </div>
+    </div>
+  </div>
+  <div id="customModal" class="help-modal" aria-hidden="true">
+    <div class="help-backdrop" data-custom-close></div>
+    <div class="help-panel" role="dialog" aria-modal="true" aria-labelledby="customTitle">
+      <button class="help-close" type="button" title="閉じる" data-custom-close>&times;</button>
+      <h2 id="customTitle">カスタム表示の設定</h2>
+      <div class="help-body">
+        <div id="customList"></div>
+        <div class="row" style="margin-top:12px;">
+          <button id="customSaveBtn" class="btn btn-primary" type="button">保存</button>
+          <button class="btn" type="button" data-custom-close>キャンセル</button>
+        </div>
       </div>
     </div>
   </div>

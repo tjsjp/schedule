@@ -6,6 +6,9 @@
  *
  * This software is distribute under MIT License
  */
+let isComposing = false;
+document.addEventListener('compositionstart', () => { isComposing = true; });
+document.addEventListener('compositionend', () => { isComposing = false; });
 
 var formula = (function() {
     // Based on sutoiku work (https://github.com/sutoiku)
@@ -13454,6 +13457,19 @@ if (! jSuites && typeof(require) === 'function') {
                                         } else {
                                             // Start edition
                                             jspreadsheet.current.openEditor(jspreadsheet.current.records[rowId][columnId], true);
+                                            // ★ ここからIME対応
+                                            const ed = jexcel.current?.edition?.input;
+                                            if (ed) {
+                                                // スペースを最初から入れたい場合はここで人工挿入（IME OFF時のみ）
+                                                const printable = !e.ctrlKey && !e.metaKey && !e.altKey;
+                                                const imeLike = isComposing || e.key === 'Process' || e.keyCode === 229;
+                                                if (!imeLike && printable) {
+                                                const k = ' ';
+                                                ed.value = (ed.value || '') + k;
+                                                ed.setSelectionRange(ed.value.length, ed.value.length);
+                                                ed.dispatchEvent(new Event('input', { bubbles: true }));
+                                                }
+                                            }
                                         }
                                     } else if (e.keyCode == 113) {
                                         // Start edition with current content F2
@@ -13465,6 +13481,27 @@ if (! jSuites && typeof(require) === 'function') {
                                                ((String.fromCharCode(e.keyCode) == e.key || String.fromCharCode(e.keyCode).toLowerCase() == e.key.toLowerCase()) && jexcel.validLetter(String.fromCharCode(e.keyCode)))) {
                                         // Start edition
                                         jexcel.current.openEditor(jexcel.current.records[rowId][columnId], true);
+                                        e.preventDefault();
+const cell = jexcel.current?.edition?.[0];
+const ed = cell?.querySelector('input, textarea');
+if (!ed) return;
+
+// フォーカス（openEditor内で当たってる想定だが、念のため）
+ed.focus();
+
+// このtickの後で合成が始まったかをチェック
+setTimeout(() => {
+
+  const printable = e.key && e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey;
+const comp = e.isComposing;
+  if (!comp && printable) {
+    // ＝IME OFF（英数）だった → 最初の1文字を人工挿入（Excel挙動）
+    ed.value = (ed.value || '') + e.key;
+    ed.setSelectionRange(ed.value.length, ed.value.length);
+    ed.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+  // startedComposition === true なら IME ON → ここでは何もしない（以降はIMEイベントで流れてくる）
+}, 10); // 0〜10ms で十分。必要なら 10 にしてもOK
                                         // Prevent entries in the calendar
                                         if (jexcel.current.options.columns[columnId].type == 'calendar') {
                                             e.preventDefault();
@@ -14991,5 +15028,4 @@ if (! jSuites && typeof(require) === 'function') {
     }
 
     return jexcel;
-
 })));
