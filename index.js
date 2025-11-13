@@ -13075,6 +13075,48 @@ if (! jSuites && typeof(require) === 'function') {
                     });
                 }
 
+                items.push({
+                    title:'選択範囲[ 休 ]',
+                    onclick:function() {
+                        const inst = jexcel.current || obj;
+                        if (!inst) return;
+
+                        // 選択範囲を取得（x1,y1,x2,y2 を正規化）
+                        const s = Array.isArray(inst.selectedCell) ? inst.selectedCell : [0,0,0,0];
+                        let x1 = Number(s[0]), y1 = Number(s[1]);
+                        let x2 = Number(s[2] ?? s[0]), y2 = Number(s[3] ?? s[1]);
+                        const fromX = Math.min(x1, x2), toX = Math.max(x1, x2);
+                        const fromY = Math.min(y1, y2), toY = Math.max(y1, y2);
+
+                        // 選択サイズに合わせたテキストを生成（タブ区切り/改行区切り）
+                        const cols = toX - fromX + 1;
+                        const rows = toY - fromY + 1;
+                        const text = Array(rows).fill(Array(cols).fill('休').join('\t')).join('\n');
+
+                        // 範囲先頭にペースト（Jspreadsheet が範囲に展開）
+                        inst.paste(fromX, fromY, text);
+                    }
+                });
+
+                items.push({
+                    title:'選択範囲[ 有給休暇 ]',
+                    onclick:function() {
+                        const inst = jexcel.current || obj;
+                        if (!inst) return;
+
+                        const s = Array.isArray(inst.selectedCell) ? inst.selectedCell : [0,0,0,0];
+                        let x1 = Number(s[0]), y1 = Number(s[1]);
+                        let x2 = Number(s[2] ?? s[0]), y2 = Number(s[3] ?? s[1]);
+                        const fromX = Math.min(x1, x2), toX = Math.max(x1, x2);
+                        const fromY = Math.min(y1, y2), toY = Math.max(y1, y2);
+
+                        const cols = toX - fromX + 1;
+                        const rows = toY - fromY + 1;
+                        const text = Array(rows).fill(Array(cols).fill('有給休暇').join('\t')).join('\n');
+
+                        inst.paste(fromX, fromY, text);
+                    }
+                });
                 // Save
                 if (obj.options.allowExport) {
                     items.push({
