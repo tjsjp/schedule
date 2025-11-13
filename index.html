@@ -148,16 +148,21 @@
       padding-left: 6px;
     }
     /* 部署色(8色バケット) */
-    .dep-1{ background:#fff7e6 !important; }
-    .dep-2{ background:#e6f7ff !important; }
-    .dep-3{ background:#f9f0ff !important; }
-    .dep-4{ background:#e6fffb !important; }
-    .dep-5{ background:#f6ffed !important; }
-    .dep-6{ background:#fff1f0 !important; }
-    .dep-7{ background:#f0f5ff !important; }
-    .dep-8{ background:#fefefe !important; }
-    .dep-head{ box-shadow: inset 0 2px #888; }
-
+    .dep-head.dep-1{ background:#fff7e6 !important; }
+    .dep-head.dep-2{ background:#e6f7ff !important; }
+    .dep-head.dep-3{ background:#f9f0ff !important; }
+    .dep-head.dep-4{ background:#e6fffb !important; }
+    .dep-head.dep-5{ background:#f6ffed !important; }
+    .dep-head.dep-6{ background:#fff1f0 !important; }
+    .dep-head.dep-7{ background:#f0f5ff !important; }
+    .dep-head.dep-8{ background:#fefefe !important; }
+    .rest-text {
+      color: red;
+      font-weight: 700;
+    }
+    .rest-mark {
+      margin-right: 0.25em;
+    }
     /* トグルの見た目 */
     .togglebar{ display:flex; gap:12px; align-items:center; flex-wrap:wrap; padding:8px var(--pad); }
     .tgl{ padding:0 8px; border:1px solid #bbb; background:#fff; border-radius:8px; height:28px; min-width:34px; cursor:pointer; }
@@ -310,9 +315,6 @@
       }
       if (helpBtn) {
         helpBtn.style.display = isProbablyMobile ? 'none' : 'inline-flex';
-      }
-      if (logoutBtn) {
-        logoutBtn.style.display = isProbablyMobile ? 'none' : 'inline-flex';
       }
     }
 
@@ -701,7 +703,6 @@
             dataColStart: 2,
             enableTextFit: true,
             enableInitialTextFit: true,
-            allowHorizontalWheel: false,
             autoScrollToToday: true,
             tym: ym
           };
@@ -713,8 +714,7 @@
             allowCopyEmptyGuard: true,
             onChangeCleaner: true,
             allowPaste: true,
-            editable: true,
-            enableClickOpenEditor: true
+            editable: true
           };
           const mobileUx = {
             ...commonUx,
@@ -724,8 +724,7 @@
             allowCopyEmptyGuard: false,
             onChangeCleaner: false,
             allowPaste: false,
-            editable: false,
-            enableClickOpenEditor: false
+            editable: false
           };
           const ux = env.isProbablyMobile ? mobileUx : desktopUx;
           // 1) APIから月データ取得（既存関数）
@@ -1207,38 +1206,60 @@
         byDept.get(dep).push(e);
       }
 
-      // 部署ごとにセクション
       const frag = document.createDocumentFragment();
       let depIndex = 0;
+
       for (const [dep, list] of byDept) {
         depIndex++;
-        const colorClass = `dep-${((depIndex - 1) % 8) + 1}`;  // dep-1?dep-8をループ
+        const colorClass = `dep-${((depIndex - 1) % 8) + 1}`;  // dep-1〜dep-8 をループ
 
-        // セクション
+        // セクション自体には色クラスを付けない
         const sec = document.createElement('section');
-        sec.className = `today-section ${colorClass}`;
+        sec.className = 'today-section';
 
         const h = document.createElement('h3');
         h.textContent = dep || '(未設定)';
-        h.classList.add('dep-head');
+        // 部署名だけ色を付ける
+        h.className = `dep-head ${colorClass}`;
         sec.appendChild(h);
 
         const grid = document.createElement('div');
         grid.className = 'card-grid';
 
         // 部署の従業員順（row_index→名前）
-        list.sort((a,b)=>(a.row_index??0)-(b.row_index??0) || a.name.localeCompare(b.name,'ja'));
+        list.sort(
+          (a,b)=>(a.row_index??0)-(b.row_index??0) || a.name.localeCompare(b.name,'ja')
+        );
 
         for (const e of list) {
           const sched = byEmp.get(e.id) || { am:'', pm:'' };
+          const amText = sched.am || '';
+          const pmText = sched.pm || '';
+
+          // 「休」判定
+          const amRest = amText.includes('休');
+          const pmRest = pmText.includes('休');
+
+          // 名前前のマーク決定
+          let mark = '';
+          if (amRest && pmRest) {
+            mark = '●';
+          } else if (amRest) {
+            mark = '◐';
+          } else if (pmRest) {
+            mark = '◑';
+          }
+          const markHtml = mark ? `<span class="rest-mark rest-text">${mark}</span>` : '';
 
           const card = document.createElement('div');
-          card.className = `today-card ${colorClass}`;
+          // カードには色クラスを付けない
+          card.className = 'today-card';
+
           card.innerHTML = `
             <div class="row4">
               <div class="cell">
                 <span class="label">名前</span>
-                <div class="val name">${e.name || ''}</div>
+                <div class="val name">${markHtml}${e.name || ''}</div>
               </div>
               <div class="cell">
                 <span class="label">メモ</span>
@@ -1246,11 +1267,11 @@
               </div>
               <div class="cell am">
                 <span class="label">午前</span>
-                <div class="val">${sched.am || ''}</div>
+                <div class="val${amRest ? ' rest-text' : ''}">${amText}</div>
               </div>
               <div class="cell pm">
                 <span class="label">午後</span>
-                <div class="val">${sched.pm || ''}</div>
+                <div class="val${pmRest ? ' rest-text' : ''}">${pmText}</div>
               </div>
             </div>
           `;
@@ -1262,6 +1283,7 @@
       }
       container.appendChild(frag);
     }
+
     /** 今日のカード表示：データ読み出し→描画→表示切替 */
     async function renderTodayCards(){
       const { access_token: token } = await getActiveSessionOrLogout();
@@ -1457,9 +1479,7 @@
     <div class="selectbar">
       <button id="gridSaveBtn" class="btn btn-primary" type="button" style="display:none;">保存</button>
       <span id="dirtyBadge" class="dirty-badge">0</span>
-      <label class="muted">月</label>
       <select id="monthSelect"></select>
-      <label class="muted">部</label>
       <select id="deptSelect" class="grow"></select>
       <button id="refreshBtn" class="btn">↻</button>
       <button id="helpBtn" class="btn">？</button>
@@ -1482,7 +1502,7 @@
     <div class="togglebar">
       <!-- お知らせ：非ボタンはラベルのみ。切替は左の（＋/?）で -->
       <button id="tglNotice" class="tgl" type="button" aria-pressed="false" data-target="noticePanel">＋</button>
-      <span>掲示板</span>
+      <span>お知らせ</span>
 
       <!-- クイック登録 -->
       <button id="tglQuick" class="tgl" type="button" aria-pressed="false" data-target="quickPanel">＋</button>
@@ -1494,7 +1514,7 @@
 
       <!-- 会社予定登録（管理者のみ可視） -->
       <button id="tglCompany" class="tgl" type="button" aria-pressed="false" data-target="companyPanel" style="display:none">＋</button>
-      <button id="companySaveBtn" class="btn" type="button" style="display:none">掲示板登録</button>
+      <button id="companySaveBtn" class="btn" type="button" style="display:none">掲示板</button>
     </div>
     <!-- お知らせ（＝会社予定一覧） -->
     <div id="noticePanel" class="panel quick-section" style="display:none;">
@@ -1562,7 +1582,7 @@
       <div id="helpBody" class="help-body">
         <p>※URLや仕様は変更になる可能性があります<br>
         エクセルとは連動していません、テストデータなので自由に編集可能です<br>
-        本運用時にエクセルの行動予定表を完全に移行予定です。<br>
+        本運用時にアプリ上のデータは完全に削除されます。<br>
         ログイン者以外には非公開の情報ですが、安全のため個人情報は保存しないでください<br>
         <br><strong>動作不良時について</strong><br>
         ボタンが反応しない・保存出来ない・うまく表示されない などが起こったときは<br>
@@ -1584,10 +1604,14 @@
         上部からのみ編集可能です<br>
         <br>PC・スマホ両方でアプリ化可能です<br>
         PCはアドレスバー右端の「行動予定表をインストール」<br>
-        OSはブラウザ下部のボタンから「ホーム画面に追加」<br>
+        iOSはブラウザ下部の「共有」ボタンから「ホーム画面に追加」<br>
+        ※iOSのバージョンによってボタン位置が変わります<br>
         上記の操作で上下のノッチ・URL欄が無い状態での表示が可能です<br>
-        <br><strong>管理者向け設定について</strong><br>管理者は全員のスケジュール・メモを編集可能になっています<br>さらに上部の掲示板登録の入力欄からお知らせや行事の登録・削除が可能です。<br>「掲示板登録」ボタンの左隣の「＋」または「－」ボタンで入力欄を開閉できます。<br>入力欄に予定を入れて「掲示板」ボタンを押すと保存されます。<br>削除は削除したい内容の左隣の「削除」のボタンを押してください。<br>
+        <br><strong>管理者向け設定について</strong><br>管理者は全員のスケジュール・メモを編集可能になっています<br>さらに上部の掲示板入力欄からお知らせや行事の登録・削除が可能です。<br>「掲示板」ボタンの左隣の「＋」または「－」ボタンで入力欄を開閉できます。<br>入力欄に予定を入れて「掲示板」ボタンを押すと保存されます。<br>削除は削除したい内容の左隣の「削除」のボタンを押してください。<br>
         掲示板入力欄詳細<br>・種別(必須)-お知らせか行事か選択出来ます。お知らせなら優先して上部に表示<br>・開始日(必須)-行事なら開催日、お知らせなら表示期間を入力<br>・終了日-行事なら複数日にわたる場合入力、お知らせなら表示期間の最後を入力<br>・開始-行事のみ入力、特に入力しなくてもOK(例：0905もしくは9:03)<br>・終了-行事のみ入力、特に入力しなくてもOK(例：0905もしくは9:03)<br>・行事名タイトル(必須)-改行不可<br>・備考内容-改行可能、お知らせの場合は必須<br>
+        <br><strong>テスト版変更履歴</strong><br>
+        今日の予定一覧のカラー表示の調整<br>
+        一部ボタン配置の調整<br>
       </div>
     </div>
   </div>
@@ -1597,7 +1621,3 @@
   <footer></footer>
 </body>
 </html>
-
-
-
-
