@@ -168,61 +168,83 @@
           dynPrev.forEach(c => cell.classList.remove(c));
           cell.classList.remove('ht-today','ht-sat','ht-sun','ht-holiday');
 
-          // ScheduleGrid では A列が日付（行＝日付、列＝社員）
-          const raw = String((data?.[y]?.[0] ?? '')).trim(); // A列：日付
-          const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Tokyo' });
+          // この行の基準日付を取得（上方向にさかのぼる）
+          const ymd = getYmdForRow(data, y); // <= ★ ここを共通で使う
 
-          const ymd = getYmdForRow(data, y);
+          // 曜日計算用
+          let wd = null;
+          let weekLabel = '';
+          if (ymd) {
+            const [Y, M, D] = ymd.split('-').map(Number);
+            const weekday = (y,m,d) => {
+              const t=[0,3,2,5,0,3,5,1,4,6,2,4];
+              if(m<3) y-=1;
+              return (y + Math.floor(y/4) - Math.floor(y/100) + Math.floor(y/400) + t[m-1] + d) % 7;
+            };
+            wd = weekday(Y, M, D);
+            const weekNames = ['日','月','火','水','木','金','土'];
+            weekLabel = weekNames[wd] || '';
+          }
 
-          // A列の「表示だけ」をMM-DDにしたい場合
-          if (x === 0) {
-            const m = String(ymd).match(/^\d{4}-(\d{2})-(\d{2})$/);
-            if (m) cell.textContent = `${m[2]}`;
+          // ★ A列の表示を「日 改行 （曜）」にする
+          if (x === 0 && ymd) {
+            const [, , , ddStr] = ymd.match(/^(\d{4})-(\d{2})-(\d{2})$/) || [];
+            const dd = ddStr ? String(Number(ddStr)) : ''; // "01" → "1" にしておく
+            if (dd && weekLabel) {
+              cell.textContent = `${dd}\n(${weekLabel})`;  // 例: "14\n(木)"
+            } else if (dd) {
+              cell.textContent = dd;
+            } else {
+              cell.textContent = '';
+            }
           }
 
           // 日付ハイライト（当日/土日/休日、「休」）
           if (x >= 2 && ymd) {
-          // PC版の classesByDate 相当（weekday判定＋祝日判定）
             const [Y,M,D] = ymd.split('-').map(Number);
-            const wd = (function weekday(y,m,d){ const t=[0,3,2,5,0,3,5,1,4,6,2,4]; if(m<3) y-=1; return (y+Math.floor(y/4)-Math.floor(y/100)+Math.floor(y/400)+t[m-1]+d)%7; })(Y,M,D);
+            const weekday = (y,m,d) => {
+              const t=[0,3,2,5,0,3,5,1,4,6,2,4];
+              if(m<3) y-=1;
+              return (y + Math.floor(y/4) - Math.floor(y/100) + Math.floor(y/400) + t[m-1] + d) % 7;
+            };
+            const wd2 = weekday(Y,M,D);
             const add = [];
             const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Tokyo' });
             if (ymd === today) add.push('ht-today');
-            if (wd === 6) add.push('ht-sat');
-            if (wd === 0) add.push('ht-sun');
+            if (wd2 === 6) add.push('ht-sat');
+            if (wd2 === 0) add.push('ht-sun');
             if (isHolidayLocal(ymd)) add.push('ht-holiday');
-            // 付与
             add.forEach(c => c && cell.classList.add(c));
             cell.dataset.htYmdClasses = add.join(' ');
-            // 内容が「休」を含む場合も強制で休日色
             if (String(value || '').includes('休')) cell.classList.add('ht-holiday');
           }
+
           // 自分列の着色 & 他列は視覚的 readonly
           if (x >= 2) {
             const empCol = x - 2; // employees 配列の index
-            if(opts?.isProbablyMobile){
+            if (opts?.isProbablyMobile) {
               if (empCol === myIndex) {
                 cell.classList.add('my-col');
               } else {
                 cell.classList.remove('my-col');
               }
               cell.classList.add('readonly');
-            }else{
+            } else {
               if (empCol === myIndex) {
                 cell.classList.add('my-col');
                 cell.classList.remove('readonly');
               } else {
-                if (!(opts?.isAdmin)){
+                if (!(opts?.isAdmin)) {
                   cell.classList.add('readonly');
                 }
                 cell.classList.remove('my-col');
               }
             }
           }
-          
+
           if (y > 0 && (y % 2 === 1)) { 
             cell.classList.add('ht-row-am');
-          }else{
+          } else {
             cell.classList.remove('ht-row-am');
           }
         } catch (e) {

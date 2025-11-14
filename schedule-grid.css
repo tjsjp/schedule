@@ -94,7 +94,9 @@ pointer-events: auto;
 z-index: 9998 !important;
 pointer-events: none;
 }
-
+.jexcel td[data-x="0"] {
+  white-space: pre-line !important;
+}
 .jexcel_row{
   background-color: #fafafa !important;
   color: #fafafa !important;
