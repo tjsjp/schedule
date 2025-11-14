@@ -5,7 +5,7 @@
   // 最小フォント(既存のものを流用)
   const SHRINK_MIN_PX = 9;
   const CLAMP_NO = 2;
-  const LONG_MS = 300;
+  const LONG_MS = 270;
   const cleanCellText = (raw) => {
     if (raw == null) return '';
     let s = String(raw);
@@ -51,7 +51,7 @@ function __todayYmdLocal() { return new Date().toLocaleDateString('sv-SE', { tim
  * - 日付は dateColIndex（既定0列目）に入っている前提
  * - AM/PMで1日が2行ある場合は最初に見つかった方へスクロール
  */
-  function autoScrollTo(jss, container, {
+  function _autoScrollToToday(jss, container, {
     ym = null,              // 'YYYY-MM'（今月判定したい時だけ渡す）
     dateColIndex = 0,       // 日付が入っている列（A列=0）
     position = 'center'        // 'top' | 'center' | 'bottom'
@@ -431,6 +431,79 @@ function __todayYmdLocal() { return new Date().toLocaleDateString('sv-SE', { tim
     })();
   }
 
+  // クリック短押し＝単一点なら openEditor、長押し・ドラッグは編集しない
+  function installOpenEditorOnClick(jss, container, { minEditableCol = 0 } = {}) {
+    const root = container.querySelector('.jexcel');
+    if (!root || jss._clickOpenInstalled) return;
+    jss._clickOpenInstalled = true;
+
+    const MOVE_PX = 4;
+    let downX=0, downY=0, dragging=false, longTimer=null, longActive=false, rightPress=false;
+
+    const clearLong = ()=>{ if (longTimer) { clearTimeout(longTimer); longTimer=null; } };
+
+    const tdToCoords = (td) => {
+        if (!td) return null;
+        if (typeof jss.getCoords === 'function') {
+        try { const [x,y] = jss.getCoords(td); return { x:Number(x), y:Number(y) }; } catch {}
+        }
+        const ax = td.getAttribute('x') ?? td.getAttribute('data-x') ?? td.dataset?.x;
+        const ay = td.getAttribute('y') ?? td.getAttribute('data-y') ?? td.dataset?.y;
+        if (ax != null && ay != null) return { x:Number(ax), y:Number(ay) };
+        return null;
+    };
+
+    const selectOne = (y, x) => {
+        if (typeof jss.setHighlighted === 'function') jss.setHighlighted(y, x);
+        else if (typeof jss.setSelection === 'function') jss.setSelection(y, x, y, x);
+        else if (typeof jss.setSelectionFromCoords === 'function') jss.setSelectionFromCoords(x, y, x, y);
+        jss._selActive = true; jss._lastSel = { x1:x, y1:y, x2:x, y2:y };
+    };
+
+    root.addEventListener('mousedown', (e)=>{
+        rightPress = (e.button===2) || (e.ctrlKey && e.button===0);
+        dragging=false; downX=e.clientX; downY=e.clientY; longActive=false;
+        if (!rightPress) { try { jss.closeEditor && jss.closeEditor(); } catch {} }
+
+        const td = e.target.closest?.('td');
+        const c  = tdToCoords(td);
+        clearLong();
+        longTimer = setTimeout(()=>{
+        if (!dragging && c){ longActive = true; selectOne(c.y, c.x); }
+        }, LONG_MS);
+    }, true);
+
+    root.addEventListener('mousemove', (e)=>{
+      if (!dragging && (Math.abs(e.clientX-downX)>MOVE_PX || Math.abs(e.clientY-downY)>MOVE_PX)){
+        dragging = true; clearLong();
+      }
+    }, true);
+
+    root.addEventListener('mouseup', (e)=>{
+      clearLong();
+      if (dragging) return;
+      if (rightPress){ rightPress=false; const td = e.target.closest?.('td'); const c = tdToCoords(td); if (c) selectOne(c.y, c.x); return; }
+      if (longActive){ longActive=false; return; }
+
+      const s = jss._lastSel; if (!s) return;
+      const { x1,y1,x2,y2 } = s;
+      if (x1===x2 && y1===y2 && x1>=minEditableCol){
+      const td = jss.getCellFromCoords(x1,y1);
+      if (!td) return;
+
+      // ★ 読み取り専用セルはエディタを開かない＆縮小を即復帰
+      if (td.classList.contains('readonly')) {
+        requestAnimationFrame(() => applyShrinkToFit(td, SHRINK_MIN_PX));
+        return;
+      }
+      const ed = jss._editing, pending = jss._openingNext;
+      const sameEditing = ed && Number(ed.x)===x1 && Number(ed.y)===y1;
+      const samePending = pending && Number(pending.x)===x1 && Number(pending.y)===y1;
+      if (!sameEditing && !samePending && td) try { jss.openEditor(td); } catch {}
+      }
+    }, true);
+  }
+
   // クリップボード：空範囲コピー対策(OSが前回内容を残すのを防ぐ)
   function installCopyEmptyGuard(jss, container){
     const root = container.querySelector('.jexcel_content');
@@ -500,9 +573,55 @@ function __todayYmdLocal() { return new Date().toLocaleDateString('sv-SE', { tim
       }
     }, true);
   }
+  
+  // 置き換え：日付列だけ横スクロールにする
+  function enableHorizontalWheel(container, jss, dataColStart = 2){
+    const holder = container.querySelector('.jexcel_content');
+    if (!holder || holder._wheelBound) return;
+    holder._wheelBound = true;
+
+    // 選択範囲の矩形を取得
+    function getSelRect(){
+      if (typeof jss.getSelected === 'function'){
+        const sel = jss.getSelected();
+        if (Array.isArray(sel)){
+          if (sel.length>=4) return { x1:+sel[0], y1:+sel[1], x2:+sel[2], y2:+sel[3] };
+          if (sel.length>=2) return { x1:+sel[0], y1:+sel[1], x2:+sel[0], y2:+sel[1] };
+        }
+      }
+      const s = jss._lastSel;
+      if (s) return { x1:+s.x1, y1:+s.y1, x2:+s.x2, y2:+s.y2 };
+      return null;
+    }
+
+    // ★ 選択範囲が「すべて日付列(x >= dataColStart)」なら true
+    function isDateColumnSelection(){
+      const r = getSelRect();
+      if (!r) return false;
+      const minX = Math.min(r.x1, r.x2);
+      // すべて日付列にあることを条件にするなら下もチェックする：
+      // const maxX = Math.max(r.x1, r.x2);
+      // return minX >= dataColStart && maxX >= dataColStart;
+      return minX >= dataColStart;
+    }
+
+    holder.addEventListener('wheel', (e)=>{
+      // 以前通り：選択アクティブ時のみ介入
+      if (!(jss && jss._selActive)) return;
+
+      // ★ 日付列が選択されていない場合は素通し(＝通常の縦スクロール)
+      if (!isDateColumnSelection()) return;
+
+      // 日付列選択中のみ、縦ホイールを横スクロールへ変換
+      if (Math.abs(e.deltaY) >= Math.abs(e.deltaX)){
+        holder.scrollLeft += e.deltaY;
+        e.preventDefault();
+      }
+    }, { passive:false });
+  }
 
   // 追記：全セルに一度だけ縮小適用(初期表示用)
-  function applyInitialShrinkAll(jss, container, dataColStart) {
+  function __applyInitialShrinkAll(jss, container, dataColStart) {
     const table = container.querySelector('.jexcel_content table');
     if (!table) return;
     // x>=dataColStart のセルだけ対象にする
@@ -517,7 +636,7 @@ function __todayYmdLocal() { return new Date().toLocaleDateString('sv-SE', { tim
   }
 
   // 追記：onselection が未設定のシートに _lastSel を仕込む
-  function ensureSelectionTracker(jss) {
+  function __ensureSelectionTracker(jss) {
     if (jss._selectionTrackerInstalled) return;
     jss._selectionTrackerInstalled = true;
 
@@ -534,7 +653,7 @@ function __todayYmdLocal() { return new Date().toLocaleDateString('sv-SE', { tim
   }
 
   // === クリーニング/ダーティ/休日ハイライト ===
-  function attachOnChangeCleaner(jss) {
+  function _attachOnChangeCleaner(jss) {
     if (!jss || jss._onChangeCleanerInstalled) return;  // 二重適用防止
     const prev = jss.options?.onchange;
 
@@ -599,30 +718,36 @@ function __todayYmdLocal() { return new Date().toLocaleDateString('sv-SE', { tim
     // clipboard
     allowPaste = true,
     allowCopyEmptyGuard = true,
+    // wheel behavior
+    allowHorizontalWheel = true,
+    horizontalWheelColStart = null,
     // enter key behavior
     enterBehavior = 'down', // 'right' | 'down' | 'none'
-//    lastEditableCol = null, // ← これを追加
+    lastEditableCol = null, // ← これを追加
     // other helpers
     enableSelectionTracker = true,
+    enableClickOpenEditor = true,
     onChangeCleaner = false,
     // ▼ 追加：初期表示で今日まで横スクロール
     autoScrollToToday = false,
     tym = null,                 // 'YYYY-MM' を渡すと「今月のときのみ」発火
   } = {}){
-    if (enableSelectionTracker) ensureSelectionTracker(jss);
+    if (enableSelectionTracker) __ensureSelectionTracker(jss);
     if (enableTextFit) installShrinkHooksForJSS(jss, container, { minPx, dataColStart });
     jss._enterBehavior = enterBehavior;
     if (enterBehavior !== 'none') {
       installEditorEnterOverride(jss, container, { lastEditableCol, dataColStart });
     }
+    if (enableClickOpenEditor) installOpenEditorOnClick(jss, container, { minEditableCol: dataColStart });
     if (allowCopyEmptyGuard) installCopyEmptyGuard(jss, container);
     if (allowPaste) installPasteInterceptor(jss, container);
+    if (allowHorizontalWheel) enableHorizontalWheel(container, jss, (horizontalWheelColStart == null ? dataColStart : horizontalWheelColStart));
 
     if (enableInitialTextFit && enableTextFit) {
-      requestAnimationFrame(() => applyInitialShrinkAll(jss, container, dataColStart));
+      requestAnimationFrame(() => __applyInitialShrinkAll(jss, container, dataColStart));
     }
-    if (onChangeCleaner) {attachOnChangeCleaner(jss);}    
-    if (autoScrollToToday) {autoScrollTo(jss, container, tym);}
+    if (onChangeCleaner) {_attachOnChangeCleaner(jss);}    
+    if (autoScrollToToday) {_autoScrollToToday(jss, container, tym);}
   };
 
   window.GridControl = { 
