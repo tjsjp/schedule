@@ -1352,10 +1352,6 @@
                 <span class="label">名前</span>
                 <div class="val name">${markHtml}${e.name || ''}</div>
               </div>
-              <div class="cell">
-                <span class="label">メモ</span>
-                <div class="val memo">${(e.note||'')}</div>
-              </div>
               <div class="cell am">
                 <span class="label">午前</span>
                 <div class="val${amRest ? ' rest-text' : ''}">${amText}</div>
@@ -1363,6 +1359,10 @@
               <div class="cell pm">
                 <span class="label">午後</span>
                 <div class="val${pmRest ? ' rest-text' : ''}">${pmText}</div>
+              </div>
+              <div class="cell">
+                <span class="label">メモ</span>
+                <div class="val memo">${(e.note||'')}</div>
               </div>
             </div>
           `;
@@ -1735,6 +1735,7 @@
 </body>
 
 </html>
+
 
 
 
