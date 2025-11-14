@@ -612,9 +612,9 @@ function __todayYmdLocal() { return new Date().toLocaleDateString('sv-SE', { tim
     if (enableSelectionTracker) ensureSelectionTracker(jss);
     if (enableTextFit) installShrinkHooksForJSS(jss, container, { minPx, dataColStart });
     jss._enterBehavior = enterBehavior;
- //   if (enterBehavior !== 'none') {
- //     installEditorEnterOverride(jss, container, { lastEditableCol, dataColStart });
- //   }
+    if (enterBehavior !== 'none') {
+      installEditorEnterOverride(jss, container, { lastEditableCol, dataColStart });
+    }
     if (allowCopyEmptyGuard) installCopyEmptyGuard(jss, container);
     if (allowPaste) installPasteInterceptor(jss, container);
 
