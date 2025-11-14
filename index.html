@@ -245,8 +245,8 @@
     });
 
     function showLoginModal() {
-      document.getElementById('loginModal').style.display = '';
-      document.getElementById('appRoot').style.display = 'none';
+      document.getElementById('loginPanel').style.display = '';
+      document.getElementById('appPanel').style.display = 'none';
     }
     
     async function getActiveSessionOrLogout() {
@@ -758,7 +758,7 @@
             emps: meta.emps,         // [{id,name}] 列順
             rowKeys: meta.rowKeys,   // [{date,slot}] 行順（0=AM,1=PM…）
           }
-        };
+        }
       } finally {
         showOverlay(false);
       }
@@ -1735,5 +1735,6 @@
 </body>
 
 </html>
+
 
 
