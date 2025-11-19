@@ -13152,7 +13152,7 @@ if (! jSuites && typeof(require) === 'function') {
                     }
                 });
                 items.push({
-                    title:'選択文字を登録…',
+                    title:'カスタム文字を登録…',
                     onclick:function() {
                         const inst = jexcel.current || obj;
                         if (!inst) return;
@@ -15132,4 +15132,5 @@ const comp = e.isComposing;
     }
 
     return jexcel;
+
 })));
