@@ -1,4 +1,4 @@
-﻿(function () {
+(function () {
 
   /* ================================ JSS 共通UXユーティリティ ================================ */
 
@@ -573,52 +573,6 @@ function __todayYmdLocal() { return new Date().toLocaleDateString('sv-SE', { tim
       }
     }, true);
   }
-  
-  // 置き換え：日付列だけ横スクロールにする
-  function enableHorizontalWheel(container, jss, dataColStart = 2){
-    const holder = container.querySelector('.jexcel_content');
-    if (!holder || holder._wheelBound) return;
-    holder._wheelBound = true;
-
-    // 選択範囲の矩形を取得
-    function getSelRect(){
-      if (typeof jss.getSelected === 'function'){
-        const sel = jss.getSelected();
-        if (Array.isArray(sel)){
-          if (sel.length>=4) return { x1:+sel[0], y1:+sel[1], x2:+sel[2], y2:+sel[3] };
-          if (sel.length>=2) return { x1:+sel[0], y1:+sel[1], x2:+sel[0], y2:+sel[1] };
-        }
-      }
-      const s = jss._lastSel;
-      if (s) return { x1:+s.x1, y1:+s.y1, x2:+s.x2, y2:+s.y2 };
-      return null;
-    }
-
-    // ★ 選択範囲が「すべて日付列(x >= dataColStart)」なら true
-    function isDateColumnSelection(){
-      const r = getSelRect();
-      if (!r) return false;
-      const minX = Math.min(r.x1, r.x2);
-      // すべて日付列にあることを条件にするなら下もチェックする：
-      // const maxX = Math.max(r.x1, r.x2);
-      // return minX >= dataColStart && maxX >= dataColStart;
-      return minX >= dataColStart;
-    }
-
-    holder.addEventListener('wheel', (e)=>{
-      // 以前通り：選択アクティブ時のみ介入
-      if (!(jss && jss._selActive)) return;
-
-      // ★ 日付列が選択されていない場合は素通し(＝通常の縦スクロール)
-      if (!isDateColumnSelection()) return;
-
-      // 日付列選択中のみ、縦ホイールを横スクロールへ変換
-      if (Math.abs(e.deltaY) >= Math.abs(e.deltaX)){
-        holder.scrollLeft += e.deltaY;
-        e.preventDefault();
-      }
-    }, { passive:false });
-  }
 
   // 追記：全セルに一度だけ縮小適用(初期表示用)
   function __applyInitialShrinkAll(jss, container, dataColStart) {
@@ -718,9 +672,6 @@ function __todayYmdLocal() { return new Date().toLocaleDateString('sv-SE', { tim
     // clipboard
     allowPaste = true,
     allowCopyEmptyGuard = true,
-    // wheel behavior
-    allowHorizontalWheel = true,
-    horizontalWheelColStart = null,
     // enter key behavior
     enterBehavior = 'down', // 'right' | 'down' | 'none'
     lastEditableCol = null, // ← これを追加
@@ -741,7 +692,6 @@ function __todayYmdLocal() { return new Date().toLocaleDateString('sv-SE', { tim
     if (enableClickOpenEditor) installOpenEditorOnClick(jss, container, { minEditableCol: dataColStart });
     if (allowCopyEmptyGuard) installCopyEmptyGuard(jss, container);
     if (allowPaste) installPasteInterceptor(jss, container);
-    if (allowHorizontalWheel) enableHorizontalWheel(container, jss, (horizontalWheelColStart == null ? dataColStart : horizontalWheelColStart));
 
     if (enableInitialTextFit && enableTextFit) {
       requestAnimationFrame(() => __applyInitialShrinkAll(jss, container, dataColStart));
