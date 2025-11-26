@@ -13,8 +13,9 @@
 
 /* Day highlights */
 .ht-today{ background:#fff9db !important; }
-.ht-sat  { background:#e6ffed !important; }
+.ht-sat  { background:#e6fbff !important; }
 .ht-sun, .ht-holiday{ background:#ffe5e5 !important; }
+.ht-out{ background:#e9ffdb !important; }
 
 /* AM/PM の間にごく薄いセパレーター（低優先度） */
 .jexcel_content .ht-row-am {
