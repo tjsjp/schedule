@@ -614,6 +614,7 @@ function __todayYmdLocal() { return new Date().toLocaleDateString('sv-SE', { tim
     // 既定設定：呼び出し元が set している dataColStart を尊重（未設定なら 1）
     const dataColStart = (jss._uxDataColStart != null) ? jss._uxDataColStart : 1;
     const holidayClass = 'ht-holiday';
+    const outClass = 'ht-out';
     const cleanFn      = cleanCellText;
 
     jss._inCleanChange = false;
@@ -654,6 +655,11 @@ function __todayYmdLocal() { return new Date().toLocaleDateString('sv-SE', { tim
           const s = String(newValue ?? '');
           if (s.includes('休')) td.classList.add(holidayClass);
           else td.classList.remove(holidayClass);
+        }
+        if (td) {
+          const s = String(newValue ?? '');
+          if (s.includes('講習') || s.includes('研修') || s.includes('健康診断')) td.classList.add(outClass);
+          else td.classList.remove(outClass);
         }
       } catch {}
       // 5) 元の onchange も呼ぶ（最後に）
