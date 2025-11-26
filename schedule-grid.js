@@ -166,7 +166,7 @@
           // 前回の痕跡を掃除
           const dynPrev = (cell.dataset.htYmdClasses || '').split(/\s+/).filter(Boolean);
           dynPrev.forEach(c => cell.classList.remove(c));
-          cell.classList.remove('ht-today','ht-sat','ht-sun','ht-holiday');
+          cell.classList.remove('ht-today','ht-sat','ht-sun','ht-holiday','ht-out');
 
           // この行の基準日付を取得（上方向にさかのぼる）
           const ymd = getYmdForRow(data, y); // <= ★ ここを共通で使う
@@ -217,6 +217,7 @@
             add.forEach(c => c && cell.classList.add(c));
             cell.dataset.htYmdClasses = add.join(' ');
             if (String(value || '').includes('休')) cell.classList.add('ht-holiday');
+            if (String(value || '').includes('研修') || String(value || '').includes('講習') || String(value || '').includes('健康診断')) cell.classList.add('ht-out');
           }
 
           // 自分列の着色 & 他列は視覚的 readonly
