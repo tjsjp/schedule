@@ -1330,14 +1330,23 @@
           // 「休」判定
           const amRest = amText.includes('休');
           const pmRest = pmText.includes('休');
+          
+          const amTraining = amText.includes('講習');
+          const pmTraining = pmText.includes('講習');
 
+          const amWorkshop = amText.includes('研修');
+          const pmWorkshop = pmText.includes('研修');
+
+          const amHealthCheck = amText.includes('健康診断');
+          const pmHealthCheck = pmText.includes('健康診断');
+          
           // 名前前のマーク決定
           let mark = '';
-          if (amRest && pmRest) {
+          if ( (amRest || amTraining|| amWorkshop || amHealthCheck ) && ( pmRest || pmTraining|| pmWorkshop || pmHealthCheck ) ) {
             mark = '●';
-          } else if (amRest) {
+          } else if (amRest || amTraining|| amWorkshop || amHealthCheck) {
             mark = '◐';
-          } else if (pmRest) {
+          } else if (pmRest || pmTraining|| pmWorkshop || pmHealthCheck) {
             mark = '◑';
           }
           const markHtml = mark ? `<span class="rest-mark rest-text">${mark}</span>` : '';
@@ -1354,11 +1363,11 @@
               </div>
               <div class="cell am">
                 <span class="label">午前</span>
-                <div class="val${amRest ? ' rest-text' : ''}">${amText}</div>
+                <div class="val${(amRest || amTraining|| amWorkshop || amHealthCheck ) ? ' rest-text' : ''}">${amText}</div>
               </div>
               <div class="cell pm">
                 <span class="label">午後</span>
-                <div class="val${pmRest ? ' rest-text' : ''}">${pmText}</div>
+                <div class="val${( pmRest || pmTraining|| pmWorkshop || pmHealthCheck ) ? ' rest-text' : ''}">${pmText}</div>
               </div>
               <div class="cell">
                 <span class="label">メモ</span>
@@ -1675,13 +1684,18 @@
       <button class="help-close" type="button" title="閉じる" data-help-close>&times;</button>
       <h2 id="helpTitle">使い方</h2>
       <div id="helpBody" class="help-body">
+
         <p>※URLや仕様は変更になる可能性があります<br>
         <br><strong>テスト版変更履歴</strong><br>
+        ※修正を完全に適用するにはshift＋F5で更新をしてください※<br>
         経理・事務の予定表の欄を作成しました<br>
         今日の予定一覧のカラー表示の調整<br>
         カスタム表示機能の追加<br>(☆ボタンから従業員を選んで専用の表示画面の作成が出来ます、端末に保存)<br>
         右クリックメニューに　休　、有給休暇　、カスタム登録文字列　の一括挿入機能の追加<br>
         一部ボタン配置の調整<br>
+        講習、研修、健康診断の文字を含む場合今日の予定一覧上では赤文字<br>
+        グリット上では緑背景<br>
+        土曜日は水色背景に変更<br>
         <br><strong>※注意点</strong><br>
         ※※エクセルとは連動していません※※<br>
         テストデータなので自由に編集可能です<br>
@@ -1738,12 +1752,5 @@
 </body>
 
 </html>
-
-
-
-
-
-
-
 
 
