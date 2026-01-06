@@ -56,13 +56,13 @@
   background-color: #fafafa;
 }
 
-.jexcel .my-col {
-  color: #d32f2f !important;
-  font-weight: 700;
-}
 .jexcel .readonly {
   color: #555 !important;
   background-color: #fafafa;
+}
+.jexcel .my-col {
+  color: #d32f2f !important;
+  font-weight: 700;
 }
 .jexcel_freezed{
   z-index: 50;          /* スクロール側より高く */
