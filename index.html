@@ -1,4 +1,4 @@
-﻿﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
@@ -11,6 +11,7 @@
   <link rel="apple-touch-icon" href="./favicon.png">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>行動予定表</title>
+
   <link rel="icon" href="./favicon.png" type="image/png">
   <!-- UI 基本 -->
   <style>
@@ -1430,8 +1431,10 @@
       $('#appPanel').style.display   = sessionObj ? '' : 'none';
 
       if (sessionObj) {
-        await loadCurrentUserAndEmployees();
-        fillDepartmentOptions(currentUser.department);
+        showOverlay(true,'読込中...');
+        try {
+          await loadCurrentUserAndEmployees();
+          fillDepartmentOptions(currentUser.department);
         
         updateMemoTargetUI({ preserveSelection: false });
         (function bindMemoSelect(){
@@ -1468,13 +1471,21 @@
           snapshotSelectValues();
 
           clearAllDirty(true,[]);
+          // renderTodayCards()が内部でオーバーレイを表示するため、外側のオーバーレイを一旦非表示
+          showOverlay(false);
           await renderTodayCards();
           document.getElementById('gridPanel').style.display  = 'none';
           document.getElementById('todayPanel').style.display = '';
         } else {
           clearAllDirty(true,[]);
+          // renderGrid()が内部でオーバーレイを表示するため、外側のオーバーレイを一旦非表示
+          showOverlay(false);
           const ym = document.getElementById('monthSelect').value;
           await renderGrid(ym, document.getElementById('deptSelect').value);
+        }
+        } finally {
+          // エラー時も確実にオーバーレイを非表示
+          showOverlay(false);
         }
         (async function afterLoginInit(){
           // 既存の session チェック後に…
@@ -1497,7 +1508,7 @@
       $('#loginBtn').addEventListener('click', async ()=>{
         const email = $('#email').value.trim();
         const password = $('#password').value;
-        const loginMsg = 'ログイン中...\n社内セキュリティ・サーバーの状況によって\nログイン処理が長引くことがあります\nエラーが頻繁に出る場合岩井にご連絡ください';
+        const loginMsg = 'ログイン中...';
         showOverlay(true, loginMsg);
         try {
           const { error } = await supabase.auth.signInWithPassword({ email, password });
@@ -1771,6 +1782,5 @@
 </body>
 
 </html>
-
 
 
