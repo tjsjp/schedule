@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+﻿﻿<!DOCTYPE html>
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
@@ -298,7 +298,13 @@
       const ov = document.getElementById('scheduleOverlay');
       if (!ov) return;
       if (show){
-        ov.querySelector('.overlay-text').textContent = msg;
+        const textEl = ov.querySelector('.overlay-text');
+        // 改行を<br>に変換して複数行表示に対応
+        if (msg.includes('\n')) {
+          textEl.innerHTML = msg.split('\n').join('<br>');
+        } else {
+          textEl.textContent = msg;
+        }
         ov.style.display = 'flex';
       }else{
         ov.style.display = 'none';
@@ -1492,9 +1498,21 @@
       $('#loginBtn').addEventListener('click', async ()=>{
         const email = $('#email').value.trim();
         const password = $('#password').value;
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
-        if(error){ alert('ログイン失敗: '+error.message); return; }
-        location.reload();
+        const loginMsg = 'ログイン中...\n社内セキュリティ・サーバーの状況によって\nログイン処理が長引くことがあります\nエラーが頻繁に出る場合岩井にご連絡ください';
+        showOverlay(true, loginMsg);
+        try {
+          const { error } = await supabase.auth.signInWithPassword({ email, password });
+          if(error){ 
+            showOverlay(false);
+            alert('ログイン失敗: '+error.message); 
+            return; 
+          }
+          // ログイン成功時はリロードするので、オーバーレイは自動的に消える
+          location.reload();
+        } catch (err) {
+          showOverlay(false);
+          alert('ログイン失敗: '+err.message);
+        }
       });
       // ログアウトボタン処理
       $('#logoutBtn').addEventListener('click', async () => {
