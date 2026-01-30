@@ -1432,7 +1432,7 @@
       $('#appPanel').style.display   = sessionObj ? '' : 'none';
 
       if (sessionObj) {
-        showOverlay(true,'読込中...');
+        showOverlay(true,'確認中...');
         try {
           await loadCurrentUserAndEmployees();
           fillDepartmentOptions(currentUser.department);
@@ -1783,5 +1783,6 @@
 </body>
 
 </html>
+
 
 
