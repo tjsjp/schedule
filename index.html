@@ -246,6 +246,7 @@
     });
 
     function showLoginModal() {
+      showOverlay(false); // ログインモーダル表示時にオーバーレイを解除
       document.getElementById('loginPanel').style.display = '';
       document.getElementById('appPanel').style.display = 'none';
     }
@@ -1445,95 +1446,111 @@
     }
     /* =============================== 起動 =============================== */
     document.addEventListener('DOMContentLoaded', async ()=>{
-      // UI 初期組み立て
-      fillMonthOptions(JST_NOW.asDate);
-
-      // 認証状態に応じた表示（モバイルは簡略：未ログインならSupabaseのメール/パスでログイン）
-      const { data:{ session } } = await supabase.auth.getSession();
-      $('#loginPanel').style.display = session ? 'none' : '';
-      $('#appPanel').style.display   = session ? '' : 'none';
-
-      let sessionObj = null;
+      // 初期読み込み時にオーバーレイを表示
+      showOverlay(true, '確認中...');
+      
       try {
-        sessionObj = await getActiveSessionOrLogout();  // 失効ならここでモーダル表示&throw
-      } catch {
-        // 既に showLoginModal 済み。以降の初期描画は止める
-      }
-      $('#loginPanel').style.display = sessionObj ? 'none' : '';
-      $('#appPanel').style.display   = sessionObj ? '' : 'none';
+        // UI 初期組み立て
+        fillMonthOptions(JST_NOW.asDate);
 
-      if (sessionObj) {
-        showOverlay(true,'確認中...');
+        // 認証状態に応じた表示（モバイルは簡略：未ログインならSupabaseのメール/パスでログイン）
+        const { data:{ session } } = await supabase.auth.getSession();
+        $('#loginPanel').style.display = session ? 'none' : '';
+        $('#appPanel').style.display   = session ? '' : 'none';
+
+        let sessionObj = null;
         try {
-          await loadCurrentUserAndEmployees();
-          fillDepartmentOptions(currentUser.department);
-        
-        updateMemoTargetUI({ preserveSelection: false });
-        (function bindMemoSelect(){
-          const memoSelect = document.getElementById('memoTargetSelect');
-          if (memoSelect) {
-            memoSelect.addEventListener('change', (event) => {
-              const val = event?.target?.value ?? '';
-              memoTargetEmployeeId = val ? String(val) : null;
-              syncMemoTextarea(memoTargetEmployeeId);
-              try { syncQuickInputs(memoTargetEmployeeId); } catch {}
-            });
-          }
-        })();
+          sessionObj = await getActiveSessionOrLogout();  // 失効ならここでモーダル表示&throw
+        } catch {
+          // 既に showLoginModal 済み（オーバーレイも解除済み）。以降の初期描画は止める
+          return;
+        }
+        $('#loginPanel').style.display = sessionObj ? 'none' : '';
+        $('#appPanel').style.display   = sessionObj ? '' : 'none';
 
-        // When date changes, also refresh quick inputs for the selected target
-        (function bindQuickDate(){
-          const qd = document.getElementById('qDate');
-          if (qd) {
-            qd.addEventListener('change', () => {
-              try { syncQuickInputs(memoTargetEmployeeId); } catch {}
-            });
-          }
-        })();
-        
-        const sel = document.getElementById('deptSelect');
-        if (hasSavedCustom()) {
-          if (sel) sel.value = '__CUSTOM__';
-        }
-        // アクティブでないユーザーは
-        // 1) クイック登録を無効化
-        // 2) 部署セレクトを「本日の予定一覧」にしてカード表示へ
-        if (!currentUser.is_active) {
-          if (sel) sel.value = '__TODAY__';
-          snapshotSelectValues();
+        if (sessionObj) {
+          try {
+            await loadCurrentUserAndEmployees();
+            fillDepartmentOptions(currentUser.department);
+          
+            updateMemoTargetUI({ preserveSelection: false });
+            (function bindMemoSelect(){
+              const memoSelect = document.getElementById('memoTargetSelect');
+              if (memoSelect) {
+                memoSelect.addEventListener('change', (event) => {
+                  const val = event?.target?.value ?? '';
+                  memoTargetEmployeeId = val ? String(val) : null;
+                  syncMemoTextarea(memoTargetEmployeeId);
+                  try { syncQuickInputs(memoTargetEmployeeId); } catch {}
+                });
+              }
+            })();
 
-          clearAllDirty(true,[]);
-          // renderTodayCards()が内部でオーバーレイを表示するため、外側のオーバーレイを一旦非表示
-          showOverlay(false);
-          await renderTodayCards();
-          document.getElementById('gridPanel').style.display  = 'none';
-          document.getElementById('todayPanel').style.display = '';
-        } else {
-          clearAllDirty(true,[]);
-          // renderGrid()が内部でオーバーレイを表示するため、外側のオーバーレイを一旦非表示
-          showOverlay(false);
-          const ym = document.getElementById('monthSelect').value;
-          await renderGrid(ym, document.getElementById('deptSelect').value);
-        }
-        } finally {
-          // エラー時も確実にオーバーレイを非表示
-          showOverlay(false);
-        }
-        (async function afterLoginInit(){
-          // 既存の session チェック後に…
-          try{
-            // 既存 today設定
-            const today = JST_NOW.ymd;
-            const qd = document.getElementById('qDate');
-            if (qd) {
-              qd.value = today;
-              try { qd.dispatchEvent(new Event('change', { bubbles: true })); } catch {}
+            // When date changes, also refresh quick inputs for the selected target
+            (function bindQuickDate(){
+              const qd = document.querySelector('.qDate[data-entry-index="0"]');
+              if (qd) {
+                qd.addEventListener('change', () => {
+                  try { syncQuickInputs(memoTargetEmployeeId); } catch {}
+                });
+              }
+            })();
+            
+            const sel = document.getElementById('deptSelect');
+            if (hasSavedCustom()) {
+              if (sel) sel.value = '__CUSTOM__';
             }
+            // アクティブでないユーザーは
+            // 1) クイック登録を無効化
+            // 2) 部署セレクトを「本日の予定一覧」にしてカード表示へ
+            if (!currentUser.is_active) {
+              if (sel) sel.value = '__TODAY__';
+              snapshotSelectValues();
 
-            applyRoleVisibility();                       // 権限で可視切替
-            renderCompanyList(document.getElementById('monthSelect').value); // お知らせ(一覧)初期描画
-          }catch (err) {}
-        })();
+              clearAllDirty(true,[]);
+              // renderTodayCards()が内部でオーバーレイを表示するため、外側のオーバーレイを一旦非表示
+              showOverlay(false);
+              await renderTodayCards();
+              document.getElementById('gridPanel').style.display  = 'none';
+              document.getElementById('todayPanel').style.display = '';
+            } else {
+              clearAllDirty(true,[]);
+              // renderGrid()が内部でオーバーレイを表示するため、外側のオーバーレイを一旦非表示
+              showOverlay(false);
+              const ym = document.getElementById('monthSelect').value;
+              await renderGrid(ym, document.getElementById('deptSelect').value);
+            }
+          } catch (err) {
+            // エラー時も確実にオーバーレイを非表示
+            showOverlay(false);
+            console.error('初期化エラー:', err);
+          }
+          
+          (async function afterLoginInit(){
+            // 既存の session チェック後に…
+            try{
+              // 既存 today設定
+              const today = JST_NOW.ymd;
+              const qd = document.querySelector('.qDate[data-entry-index="0"]');
+              if (qd) {
+                qd.value = today;
+                try { qd.dispatchEvent(new Event('change', { bubbles: true })); } catch {}
+              }
+
+              applyRoleVisibility();                       // 権限で可視切替
+              renderCompanyList(document.getElementById('monthSelect').value); // お知らせ(一覧)初期描画
+            }catch (err) {}
+            // 最終的に表示が終わったときにオーバーレイを解除
+            showOverlay(false);
+          })();
+        } else {
+          // セッションなしの場合はオーバーレイを非表示（showLoginModalで既に解除済み）
+          showOverlay(false);
+        }
+      } catch (err) {
+        // エラー時も確実にオーバーレイを非表示
+        showOverlay(false);
+        console.error('初期化エラー:', err);
       }
 
       // ログイン
