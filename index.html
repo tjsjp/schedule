@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -1418,6 +1417,7 @@
       // UI 初期組み立て
       fillMonthOptions(JST_NOW.asDate);
 
+      showOverlay(true,'認証中...');
       // 認証状態に応じた表示（モバイルは簡略：未ログインならSupabaseのメール/パスでログイン）
       const { data:{ session } } = await supabase.auth.getSession();
       $('#loginPanel').style.display = session ? 'none' : '';
@@ -1784,4 +1784,3 @@
 </body>
 
 </html>
-
