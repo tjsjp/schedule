@@ -241,7 +241,6 @@
     const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
       auth: {
         persistSession: true,        // 端末ごとにセッション保持
-        autoRefreshToken: false,     // ★自動リフレッシュを止める
         detectSessionInUrl: true,
       },
     });
@@ -251,80 +250,23 @@
       document.getElementById('appPanel').style.display = 'none';
     }
     
-    // トークンリフレッシュ（タイムアウト・リトライ付き）
-    async function refreshSessionWithRetry({ timeoutMs = 15000, tries = 2 } = {}) {
-      let lastErr;
-      for (let i = 0; i < tries; i++) {
-        try {
-          let timeoutId;
-          const timeoutPromise = new Promise((_, reject) => {
-            timeoutId = setTimeout(() => {
-              reject(new Error('タイムアウト'));
-            }, timeoutMs);
-          });
-          
-          const refreshPromise = supabase.auth.refreshSession().then(result => {
-            clearTimeout(timeoutId);
-            return result;
-          });
-          
-          const { data: { session: newSession }, error } = await Promise.race([
-            refreshPromise,
-            timeoutPromise
-          ]);
-          
-          if (error || !newSession) {
-            throw new Error(error?.message || 'リフレッシュ失敗');
-          }
-          return newSession;
-        } catch (e) {
-          lastErr = e;
-          if (i < tries - 1) {
-            // リトライ前に少し待つ
-            await sleep(200 * (i + 1));
-          }
-        }
-      }
-      throw lastErr;
-    }
-
     async function getActiveSessionOrLogout() {
       const { data: { session } } = await supabase.auth.getSession();
       const now = Math.floor(Date.now() / 1000);
       const exp = session?.expires_at ?? 0;
     
-      // セッションなし or アクセストークン期限切れ
+      // セッションなし or アクセストークン期限切れ → ログアウト＆ログイン要求
       if (!session || !session.access_token || exp <= now) {
-        // リフレッシュトークンがある場合はリフレッシュを試みる
-        if (session?.refresh_token) {
-          showOverlay(true, '再ログイン中...');
-          try {
-            const newSession = await refreshSessionWithRetry({ timeoutMs: 15000, tries: 2 });
-            showOverlay(false);
-            return newSession;
-          } catch (err) {
-            showOverlay(false);
-            // リフレッシュ失敗 → ログアウト
-            try { await supabase.auth.signOut({ scope: 'local' }); } catch (e) {}
-            showLoginModal();
-            throw new Error('session_expired');
-          }
-        } else {
-          // リフレッシュトークンなし → ログアウト
-          try { await supabase.auth.signOut({ scope: 'local' }); } catch (err) {}
-          showLoginModal();
-          throw new Error('session_expired');
-        }
+        try { await supabase.auth.signOut({ scope: 'local' }); } catch (err) {}
+        showLoginModal();                // ← 既存のモーダル展開関数を呼ぶ
+        throw new Error('session_expired');
       }
       return session;
     }
     // --- 失効・サインアウト監視（グローバル） ---
-    supabase.auth.onAuthStateChange((evt, session) => {
+    supabase.auth.onAuthStateChange((evt) => {
       if (evt === 'SIGNED_OUT') {
         showLoginModal();  // すぐログイン画面へ
-      } else if (evt === 'TOKEN_REFRESHED') {
-        // トークンリフレッシュ時（自動リフレッシュが有効な場合）
-        // このイベントは自動リフレッシュが有効な場合のみ発火
       }
     });
     
