@@ -2,6 +2,8 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
+  <link rel="preconnect" href="https://rqrgsytkxbhbrnrhqlca.supabase.co" crossorigin>
+  <link rel="dns-prefetch" href="https://rqrgsytkxbhbrnrhqlca.supabase.co">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="行動予定表">
@@ -249,23 +251,80 @@
       document.getElementById('appPanel').style.display = 'none';
     }
     
+    // トークンリフレッシュ（タイムアウト・リトライ付き）
+    async function refreshSessionWithRetry({ timeoutMs = 15000, tries = 2 } = {}) {
+      let lastErr;
+      for (let i = 0; i < tries; i++) {
+        try {
+          let timeoutId;
+          const timeoutPromise = new Promise((_, reject) => {
+            timeoutId = setTimeout(() => {
+              reject(new Error('タイムアウト'));
+            }, timeoutMs);
+          });
+          
+          const refreshPromise = supabase.auth.refreshSession().then(result => {
+            clearTimeout(timeoutId);
+            return result;
+          });
+          
+          const { data: { session: newSession }, error } = await Promise.race([
+            refreshPromise,
+            timeoutPromise
+          ]);
+          
+          if (error || !newSession) {
+            throw new Error(error?.message || 'リフレッシュ失敗');
+          }
+          return newSession;
+        } catch (e) {
+          lastErr = e;
+          if (i < tries - 1) {
+            // リトライ前に少し待つ
+            await sleep(200 * (i + 1));
+          }
+        }
+      }
+      throw lastErr;
+    }
+
     async function getActiveSessionOrLogout() {
       const { data: { session } } = await supabase.auth.getSession();
       const now = Math.floor(Date.now() / 1000);
       const exp = session?.expires_at ?? 0;
     
-      // セッションなし or アクセストークン期限切れ → ログアウト＆ログイン要求
+      // セッションなし or アクセストークン期限切れ
       if (!session || !session.access_token || exp <= now) {
-        try { await supabase.auth.signOut({ scope: 'local' }); } catch (err) {}
-        showLoginModal();                // ← 既存のモーダル展開関数を呼ぶ
-        throw new Error('session_expired');
+        // リフレッシュトークンがある場合はリフレッシュを試みる
+        if (session?.refresh_token) {
+          showOverlay(true, '再ログイン中...');
+          try {
+            const newSession = await refreshSessionWithRetry({ timeoutMs: 15000, tries: 2 });
+            showOverlay(false);
+            return newSession;
+          } catch (err) {
+            showOverlay(false);
+            // リフレッシュ失敗 → ログアウト
+            try { await supabase.auth.signOut({ scope: 'local' }); } catch (e) {}
+            showLoginModal();
+            throw new Error('session_expired');
+          }
+        } else {
+          // リフレッシュトークンなし → ログアウト
+          try { await supabase.auth.signOut({ scope: 'local' }); } catch (err) {}
+          showLoginModal();
+          throw new Error('session_expired');
+        }
       }
       return session;
     }
     // --- 失効・サインアウト監視（グローバル） ---
-    supabase.auth.onAuthStateChange((evt) => {
+    supabase.auth.onAuthStateChange((evt, session) => {
       if (evt === 'SIGNED_OUT') {
         showLoginModal();  // すぐログイン画面へ
+      } else if (evt === 'TOKEN_REFRESHED') {
+        // トークンリフレッシュ時（自動リフレッシュが有効な場合）
+        // このイベントは自動リフレッシュが有効な場合のみ発火
       }
     });
     
@@ -549,18 +608,48 @@
       return { isProbablyMobile, isProbablyDesktop };
     }
     /* =============================== 認証＆従業員 =============================== */
+    function sleep(ms){ return new Promise(r => setTimeout(r, ms)); }
+
+    async function fetchWithTimeout(url, opt = {}, timeoutMs = 15000){
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), timeoutMs);
+      try{
+        return await fetch(url, { ...opt, signal: ctrl.signal });
+      } finally {
+        clearTimeout(t);
+      }
+    }
+
+    async function fetchRetry(url, opt, { timeoutMs = 15000, tries = 2 } = {}){
+      let lastErr;
+      for (let i = 0; i < tries; i++){
+        try{
+          const res = await fetchWithTimeout(url, opt, timeoutMs);
+          return res;
+        } catch (e){
+          lastErr = e;
+          // AbortError も含めて軽く待ってリトライ
+          await sleep(200 * (i + 1));
+        }
+      }
+      throw lastErr;
+    }
+
     async function loadCurrentUserAndEmployees(){
+      // auth 更新が必要ならここで先に片付ける（token refresh が走る回のブレを減らす）
+      await supabase.auth.getUser();
       const { data:{ session } } = await supabase.auth.getSession();
       const token = session?.access_token;
-      if(!token) throw new Error('未ログイン');
-      
-      const res = await fetch(`${SUPABASE_URL}/functions/v1/employees-get`, {
+      if(!token) throw new Error("未ログイン");
+
+      const url = `${SUPABASE_URL}/functions/v1/employees-get`;
+      const res = await fetchRetry(url, {
         headers: { Authorization: `Bearer ${token}` },
-        cache: 'no-store'
-      });
-      const json = await res.json();
+      }, { timeoutMs: 15000, tries: 2 }); // 15秒で切って最大2回
+
+      const json = await res.json().catch(() => null);
       if(!res.ok || !json?.ok) throw new Error(json?.error || `HTTP ${res.status}`);
-      
+
       employeesAll = json.employees || [];
       employeesVisible = employeesAll.filter(e => e.is_active !== false);
       currentUser = json.currentUser || {
@@ -608,7 +697,7 @@
       const ids = employeesVisible.map(e=>e.id).filter(v=>v!=null);
       const qsEmp = ids.length ? `&emp_ids=${encodeURIComponent(ids.join(','))}` : '';
       const res = await fetch(`${SUPABASE_URL}/functions/v1/schedules-get?month=${encodeURIComponent(ym)}${qsEmp}&_=${Date.now()}`, {
-        headers:{ Authorization:`Bearer ${token}` }, cache:'no-store'
+        headers:{ Authorization:`Bearer ${token}` }
       });
       const json = await res.json();
       const items = normalizeSchedules(json);
@@ -1071,7 +1160,7 @@
       const res=await fetch(`${SUPABASE_URL}/functions/v1/company-events-delete`,{
         method:'POST',
         headers:{'Authorization':`Bearer ${token}`,'Content-Type':'application/json'},
-        body:JSON.stringify({ id }), cache:'no-store'
+        body:JSON.stringify({ id })
       });
       const txt=await res.text(); let j=null; try{ j=JSON.parse(txt);}catch (err) {}
       if(!res.ok || (j&&j.ok===false)) throw new Error(j?.error||txt||`HTTP ${res.status}`);
@@ -1783,8 +1872,3 @@
 </body>
 
 </html>
-
-
-
-
-
