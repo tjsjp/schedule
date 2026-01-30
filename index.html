@@ -1,9 +1,8 @@
+
 <!DOCTYPE html>
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <link rel="preconnect" href="https://rqrgsytkxbhbrnrhqlca.supabase.co" crossorigin>
-  <link rel="dns-prefetch" href="https://rqrgsytkxbhbrnrhqlca.supabase.co">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="行動予定表">
@@ -241,12 +240,12 @@
     const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
       auth: {
         persistSession: true,        // 端末ごとにセッション保持
+        autoRefreshToken: false,     // ★自動リフレッシュを止める
         detectSessionInUrl: true,
       },
     });
 
     function showLoginModal() {
-      showOverlay(false); // ログインモーダル表示時にオーバーレイを解除
       document.getElementById('loginPanel').style.display = '';
       document.getElementById('appPanel').style.display = 'none';
     }
@@ -551,48 +550,18 @@
       return { isProbablyMobile, isProbablyDesktop };
     }
     /* =============================== 認証＆従業員 =============================== */
-    function sleep(ms){ return new Promise(r => setTimeout(r, ms)); }
-
-    async function fetchWithTimeout(url, opt = {}, timeoutMs = 15000){
-      const ctrl = new AbortController();
-      const t = setTimeout(() => ctrl.abort(), timeoutMs);
-      try{
-        return await fetch(url, { ...opt, signal: ctrl.signal });
-      } finally {
-        clearTimeout(t);
-      }
-    }
-
-    async function fetchRetry(url, opt, { timeoutMs = 15000, tries = 2 } = {}){
-      let lastErr;
-      for (let i = 0; i < tries; i++){
-        try{
-          const res = await fetchWithTimeout(url, opt, timeoutMs);
-          return res;
-        } catch (e){
-          lastErr = e;
-          // AbortError も含めて軽く待ってリトライ
-          await sleep(200 * (i + 1));
-        }
-      }
-      throw lastErr;
-    }
-
     async function loadCurrentUserAndEmployees(){
-      // auth 更新が必要ならここで先に片付ける（token refresh が走る回のブレを減らす）
-      await supabase.auth.getUser();
       const { data:{ session } } = await supabase.auth.getSession();
       const token = session?.access_token;
-      if(!token) throw new Error("未ログイン");
-
-      const url = `${SUPABASE_URL}/functions/v1/employees-get`;
-      const res = await fetchRetry(url, {
+      if(!token) throw new Error('未ログイン');
+      
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/employees-get`, {
         headers: { Authorization: `Bearer ${token}` },
-      }, { timeoutMs: 15000, tries: 2 }); // 15秒で切って最大2回
-
-      const json = await res.json().catch(() => null);
+        cache: 'no-store'
+      });
+      const json = await res.json();
       if(!res.ok || !json?.ok) throw new Error(json?.error || `HTTP ${res.status}`);
-
+      
       employeesAll = json.employees || [];
       employeesVisible = employeesAll.filter(e => e.is_active !== false);
       currentUser = json.currentUser || {
@@ -640,7 +609,7 @@
       const ids = employeesVisible.map(e=>e.id).filter(v=>v!=null);
       const qsEmp = ids.length ? `&emp_ids=${encodeURIComponent(ids.join(','))}` : '';
       const res = await fetch(`${SUPABASE_URL}/functions/v1/schedules-get?month=${encodeURIComponent(ym)}${qsEmp}&_=${Date.now()}`, {
-        headers:{ Authorization:`Bearer ${token}` }
+        headers:{ Authorization:`Bearer ${token}` }, cache:'no-store'
       });
       const json = await res.json();
       const items = normalizeSchedules(json);
@@ -1103,7 +1072,7 @@
       const res=await fetch(`${SUPABASE_URL}/functions/v1/company-events-delete`,{
         method:'POST',
         headers:{'Authorization':`Bearer ${token}`,'Content-Type':'application/json'},
-        body:JSON.stringify({ id })
+        body:JSON.stringify({ id }), cache:'no-store'
       });
       const txt=await res.text(); let j=null; try{ j=JSON.parse(txt);}catch (err) {}
       if(!res.ok || (j&&j.ok===false)) throw new Error(j?.error||txt||`HTTP ${res.status}`);
@@ -1446,111 +1415,95 @@
     }
     /* =============================== 起動 =============================== */
     document.addEventListener('DOMContentLoaded', async ()=>{
-      // 初期読み込み時にオーバーレイを表示
-      showOverlay(true, '確認中...');
-      
+      // UI 初期組み立て
+      fillMonthOptions(JST_NOW.asDate);
+
+      // 認証状態に応じた表示（モバイルは簡略：未ログインならSupabaseのメール/パスでログイン）
+      const { data:{ session } } = await supabase.auth.getSession();
+      $('#loginPanel').style.display = session ? 'none' : '';
+      $('#appPanel').style.display   = session ? '' : 'none';
+
+      let sessionObj = null;
       try {
-        // UI 初期組み立て
-        fillMonthOptions(JST_NOW.asDate);
+        sessionObj = await getActiveSessionOrLogout();  // 失効ならここでモーダル表示&throw
+      } catch {
+        // 既に showLoginModal 済み。以降の初期描画は止める
+      }
+      $('#loginPanel').style.display = sessionObj ? 'none' : '';
+      $('#appPanel').style.display   = sessionObj ? '' : 'none';
 
-        // 認証状態に応じた表示（モバイルは簡略：未ログインならSupabaseのメール/パスでログイン）
-        const { data:{ session } } = await supabase.auth.getSession();
-        $('#loginPanel').style.display = session ? 'none' : '';
-        $('#appPanel').style.display   = session ? '' : 'none';
-
-        let sessionObj = null;
+      if (sessionObj) {
+        showOverlay(true,'確認中...');
         try {
-          sessionObj = await getActiveSessionOrLogout();  // 失効ならここでモーダル表示&throw
-        } catch {
-          // 既に showLoginModal 済み（オーバーレイも解除済み）。以降の初期描画は止める
-          return;
-        }
-        $('#loginPanel').style.display = sessionObj ? 'none' : '';
-        $('#appPanel').style.display   = sessionObj ? '' : 'none';
-
-        if (sessionObj) {
-          try {
-            await loadCurrentUserAndEmployees();
-            fillDepartmentOptions(currentUser.department);
-          
-            updateMemoTargetUI({ preserveSelection: false });
-            (function bindMemoSelect(){
-              const memoSelect = document.getElementById('memoTargetSelect');
-              if (memoSelect) {
-                memoSelect.addEventListener('change', (event) => {
-                  const val = event?.target?.value ?? '';
-                  memoTargetEmployeeId = val ? String(val) : null;
-                  syncMemoTextarea(memoTargetEmployeeId);
-                  try { syncQuickInputs(memoTargetEmployeeId); } catch {}
-                });
-              }
-            })();
-
-            // When date changes, also refresh quick inputs for the selected target
-            (function bindQuickDate(){
-              const qd = document.querySelector('.qDate[data-entry-index="0"]');
-              if (qd) {
-                qd.addEventListener('change', () => {
-                  try { syncQuickInputs(memoTargetEmployeeId); } catch {}
-                });
-              }
-            })();
-            
-            const sel = document.getElementById('deptSelect');
-            if (hasSavedCustom()) {
-              if (sel) sel.value = '__CUSTOM__';
-            }
-            // アクティブでないユーザーは
-            // 1) クイック登録を無効化
-            // 2) 部署セレクトを「本日の予定一覧」にしてカード表示へ
-            if (!currentUser.is_active) {
-              if (sel) sel.value = '__TODAY__';
-              snapshotSelectValues();
-
-              clearAllDirty(true,[]);
-              // renderTodayCards()が内部でオーバーレイを表示するため、外側のオーバーレイを一旦非表示
-              showOverlay(false);
-              await renderTodayCards();
-              document.getElementById('gridPanel').style.display  = 'none';
-              document.getElementById('todayPanel').style.display = '';
-            } else {
-              clearAllDirty(true,[]);
-              // renderGrid()が内部でオーバーレイを表示するため、外側のオーバーレイを一旦非表示
-              showOverlay(false);
-              const ym = document.getElementById('monthSelect').value;
-              await renderGrid(ym, document.getElementById('deptSelect').value);
-            }
-          } catch (err) {
-            // エラー時も確実にオーバーレイを非表示
-            showOverlay(false);
-            console.error('初期化エラー:', err);
+          await loadCurrentUserAndEmployees();
+          fillDepartmentOptions(currentUser.department);
+        
+        updateMemoTargetUI({ preserveSelection: false });
+        (function bindMemoSelect(){
+          const memoSelect = document.getElementById('memoTargetSelect');
+          if (memoSelect) {
+            memoSelect.addEventListener('change', (event) => {
+              const val = event?.target?.value ?? '';
+              memoTargetEmployeeId = val ? String(val) : null;
+              syncMemoTextarea(memoTargetEmployeeId);
+              try { syncQuickInputs(memoTargetEmployeeId); } catch {}
+            });
           }
-          
-          (async function afterLoginInit(){
-            // 既存の session チェック後に…
-            try{
-              // 既存 today設定
-              const today = JST_NOW.ymd;
-              const qd = document.querySelector('.qDate[data-entry-index="0"]');
-              if (qd) {
-                qd.value = today;
-                try { qd.dispatchEvent(new Event('change', { bubbles: true })); } catch {}
-              }
+        })();
 
-              applyRoleVisibility();                       // 権限で可視切替
-              renderCompanyList(document.getElementById('monthSelect').value); // お知らせ(一覧)初期描画
-            }catch (err) {}
-            // 最終的に表示が終わったときにオーバーレイを解除
-            showOverlay(false);
-          })();
+        // When date changes, also refresh quick inputs for the selected target
+        (function bindQuickDate(){
+          const qd = document.getElementById('qDate');
+          if (qd) {
+            qd.addEventListener('change', () => {
+              try { syncQuickInputs(memoTargetEmployeeId); } catch {}
+            });
+          }
+        })();
+        
+        const sel = document.getElementById('deptSelect');
+        if (hasSavedCustom()) {
+          if (sel) sel.value = '__CUSTOM__';
+        }
+        // アクティブでないユーザーは
+        // 1) クイック登録を無効化
+        // 2) 部署セレクトを「本日の予定一覧」にしてカード表示へ
+        if (!currentUser.is_active) {
+          if (sel) sel.value = '__TODAY__';
+          snapshotSelectValues();
+
+          clearAllDirty(true,[]);
+          // renderTodayCards()が内部でオーバーレイを表示するため、外側のオーバーレイを一旦非表示
+          showOverlay(false);
+          await renderTodayCards();
+          document.getElementById('gridPanel').style.display  = 'none';
+          document.getElementById('todayPanel').style.display = '';
         } else {
-          // セッションなしの場合はオーバーレイを非表示（showLoginModalで既に解除済み）
+          clearAllDirty(true,[]);
+          // renderGrid()が内部でオーバーレイを表示するため、外側のオーバーレイを一旦非表示
+          showOverlay(false);
+          const ym = document.getElementById('monthSelect').value;
+          await renderGrid(ym, document.getElementById('deptSelect').value);
+        }
+        } finally {
+          // エラー時も確実にオーバーレイを非表示
           showOverlay(false);
         }
-      } catch (err) {
-        // エラー時も確実にオーバーレイを非表示
-        showOverlay(false);
-        console.error('初期化エラー:', err);
+        (async function afterLoginInit(){
+          // 既存の session チェック後に…
+          try{
+            // 既存 today設定
+            const today = JST_NOW.ymd;
+            const qd = document.getElementById('qDate');
+            if (qd) {
+              qd.value = today;
+              try { qd.dispatchEvent(new Event('change', { bubbles: true })); } catch {}
+            }
+
+            applyRoleVisibility();                       // 権限で可視切替
+            renderCompanyList(document.getElementById('monthSelect').value); // お知らせ(一覧)初期描画
+          }catch (err) {}
+        })();
       }
 
       // ログイン
@@ -1831,3 +1784,4 @@
 </body>
 
 </html>
+
