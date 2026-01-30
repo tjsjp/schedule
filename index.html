@@ -551,26 +551,27 @@
     /* =============================== 認証＆従業員 =============================== */
     async function loadCurrentUserAndEmployees(){
       const { data:{ session } } = await supabase.auth.getSession();
-      const email = session?.user?.email ?? null;
-      const { data: emps, error } = await supabase
-        .from('employees')
-        .select('id,name,email,department,note,row_index,is_admin,is_active')
-        .order('row_index', { ascending:true })
-        .order('name', { ascending:true });
-      if(error) throw error;
-      employeesAll = emps || [];
+      const token = session?.access_token;
+      if(!token) throw new Error('未ログイン');
+      
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/employees-get`, {
+        headers: { Authorization: `Bearer ${token}` },
+        cache: 'no-store'
+      });
+      const json = await res.json();
+      if(!res.ok || !json?.ok) throw new Error(json?.error || `HTTP ${res.status}`);
+      
+      employeesAll = json.employees || [];
       employeesVisible = employeesAll.filter(e => e.is_active !== false);
-      const me = employeesAll.find(e => (e.email||'').toLowerCase() === (email||'').toLowerCase());
-      currentUser = {
-        email,
-        employee_id: me?.id ?? null,
-        department: me?.department ?? null,
-        is_active: !!me && me.is_active !== false,
-        is_admin: !!me?.is_admin,     // ★ これを入れる
+      currentUser = json.currentUser || {
+        email: session?.user?.email ?? null,
+        employee_id: null,
+        department: null,
+        is_active: false,
+        is_admin: false,
       };
       return currentUser;
     }
-
     /* =============================== 月データ取得（既存APIの1ヶ月単位） =============================== */
     function normalizeSchedules(json){
       // サーバが {days, rows} を返す前提（desktop版互換）
