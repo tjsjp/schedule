@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -302,6 +303,11 @@
     function showOverlay(show = true,msg = '処理中...') {
       const ov = document.getElementById('scheduleOverlay');
       if (!ov) return;
+      
+      // 初回モーダルの表示状態をチェック
+      const firstVisitModal = document.getElementById('firstVisitModal');
+      const isFirstVisitModalOpen = firstVisitModal && firstVisitModal.getAttribute('aria-hidden') === 'false';
+      
       if (show){
         const textEl = ov.querySelector('.overlay-text');
         // 改行を<br>に変換して複数行表示に対応
@@ -311,6 +317,8 @@
           textEl.textContent = msg;
         }
         ov.style.display = 'flex';
+        // 初回モーダルが開いている場合はオーバーレイを下に、それ以外は上に
+        ov.style.zIndex = isFirstVisitModalOpen ? '1000' : '5000';
       }else{
         ov.style.display = 'none';
       }
@@ -1433,6 +1441,11 @@
       if (m) {
         m.setAttribute('aria-hidden', 'false');
         document.body.style.overflow = 'hidden';
+        // 初回モーダルが開いたら、表示中のオーバーレイのz-indexを下げる
+        const ov = document.getElementById('scheduleOverlay');
+        if (ov && ov.style.display === 'flex') {
+          ov.style.zIndex = '1000';
+        }
       }
     }
     function closeFirstVisitModal() {
@@ -1446,6 +1459,12 @@
         if (checkbox && checkbox.checked) {
           localStorage.setItem(NOTICE_DISMISSED_KEY, 'true');
           localStorage.setItem(NOTICE_VERSION_KEY, CURRENT_NOTICE_VERSION);
+        }
+        
+        // 初回モーダルが閉じたら、表示中のオーバーレイのz-indexを戻す
+        const ov = document.getElementById('scheduleOverlay');
+        if (ov && ov.style.display === 'flex') {
+          ov.style.zIndex = '5000';
         }
       }
     }
@@ -1854,3 +1873,6 @@
 </body>
 
 </html>
+
+
+
