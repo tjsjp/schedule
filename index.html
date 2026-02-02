@@ -217,6 +217,9 @@
     let lastMonthSelectValue = '';
     let memoTargetEmployeeId = null;
     const CUSTOM_KEY = 'schedulesApp:customEmployeeIds';
+    const NOTICE_VERSION_KEY = 'schedulesApp:noticeVersion'; // バージョン番号を保存
+    const NOTICE_DISMISSED_KEY = 'schedulesApp:noticeDismissed'; // チェックボックスの状態を保存
+    const CURRENT_NOTICE_VERSION = '1.0.0'; // 現在のバージョン番号（必要に応じて変更）
     function getSavedCustomIds() {
       try { return JSON.parse(localStorage.getItem(CUSTOM_KEY) || '[]').map(String); } catch { return []; }
     }
@@ -1413,11 +1416,64 @@
         showOverlay(false);
       }
     }
+	  
+    function checkFirstVisit() {
+      const savedVersion = localStorage.getItem(NOTICE_VERSION_KEY);
+      const isDismissed = localStorage.getItem(NOTICE_DISMISSED_KEY) === 'true';
+      
+      // バージョンが異なる OR （チェックが入っていない AND バージョンが同じ）
+      // → 表示する
+      if (savedVersion !== CURRENT_NOTICE_VERSION || !isDismissed) {
+        openFirstVisitModal();
+      }
+    }
+    function openFirstVisitModal() {
+      const m = document.getElementById('firstVisitModal');
+      if (m) {
+        m.setAttribute('aria-hidden', 'false');
+        document.body.style.overflow = 'hidden';
+        // 初回モーダルが開いたら、表示中のオーバーレイのz-indexを下げる
+        const ov = document.getElementById('scheduleOverlay');
+        if (ov && ov.style.display === 'flex') {
+          ov.style.zIndex = '1000';
+        }
+      }
+    }
+    function closeFirstVisitModal() {
+      const m = document.getElementById('firstVisitModal');
+      if (m) {
+        m.setAttribute('aria-hidden', 'true');
+        document.body.style.overflow = '';
+        
+        // チェックボックスの状態を確認して保存
+        const checkbox = document.getElementById('noticeDismissCheckbox');
+        if (checkbox && checkbox.checked) {
+          localStorage.setItem(NOTICE_DISMISSED_KEY, 'true');
+          localStorage.setItem(NOTICE_VERSION_KEY, CURRENT_NOTICE_VERSION);
+        }
+        
+        // 初回モーダルが閉じたら、表示中のオーバーレイのz-indexを戻す
+        const ov = document.getElementById('scheduleOverlay');
+        if (ov && ov.style.display === 'flex') {
+          ov.style.zIndex = '5000';
+        }
+      }
+    }
     /* =============================== 起動 =============================== */
     document.addEventListener('DOMContentLoaded', async ()=>{
+      // 初回起動チェック（最初に実行）
+      checkFirstVisit();
+      // モーダル閉じるイベント
+      document.addEventListener('click', (e) => {
+        const t = e.target;
+        if (!(t instanceof HTMLElement)) return;
+        if (t.hasAttribute('data-first-visit-close')) {
+          e.preventDefault();
+          closeFirstVisitModal();
+        }
+      });
       // UI 初期組み立て
       fillMonthOptions(JST_NOW.asDate);
-
       showOverlay(true,'認証中...');
       // 認証状態に応じた表示（モバイルは簡略：未ログインならSupabaseのメール/パスでログイン）
       const { data:{ session } } = await supabase.auth.getSession();
@@ -1764,6 +1820,29 @@
       </div>
     </div>
   </div>
+  <div id="firstVisitModal" class="help-modal" aria-hidden="true">
+    <div class="help-backdrop" data-first-visit-close></div>
+    <div class="help-panel" role="dialog" aria-modal="true" aria-labelledby="firstVisitTitle">
+      <button class="help-close" type="button" title="閉じる" data-first-visit-close>&times;</button>
+      <h2 id="firstVisitTitle">表示されない・エラーなどに関するお知らせ</h2>
+      <div class="help-body">
+        <p>
+          大塚商会が新しく設置したセキュリティ機器の影響で<br>
+          表示に時間がかかる場合があります<br>
+          30秒ほど待っても表示されないとき、一度ブラウザの更新（リロード）をお願いします<br>
+          さらに1分ほど待っても表示されない場合、<br>
+          ・画面上に表示されている文字はどんな文字か<br>
+          ・どの回線・端末からの接続（PC、スマホ、社内Wifi、ドコモ回線等）か<br>
+          をお手数ですが、岩井にご連絡ください<br>
+          お手数をおかけします、よろしくお願いします<br>
+        </p>
+        
+        <label style="display:flex; align-items:center; gap:8px; margin-top:12px;">
+          <input type="checkbox" id="noticeDismissCheckbox">
+          <span style="color:red;">次回起動時に表示しない</span>
+        </label>
+      </div>
+  </div>
   <div id="customModal" class="help-modal" aria-hidden="true">
     <div class="help-backdrop" data-custom-close></div>
     <div class="help-panel" role="dialog" aria-modal="true" aria-labelledby="customTitle">
@@ -1785,3 +1864,4 @@
 </body>
 
 </html>
+
