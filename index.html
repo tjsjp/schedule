@@ -1416,16 +1416,17 @@
         showOverlay(false);
       }
     }
-    function checkFirstVisit() {
-      const savedVersion = localStorage.getItem(NOTICE_VERSION_KEY);
-      const isDismissed = localStorage.getItem(NOTICE_DISMISSED_KEY) === 'true';
-      
-      // バージョンが異なる OR （チェックが入っていない AND バージョンが同じ）
-      // → 表示する
-      if (savedVersion !== CURRENT_NOTICE_VERSION || !isDismissed) {
-        openFirstVisitModal();
-      }
-    }
+	function checkFirstVisit() {
+	  const savedVersion = localStorage.getItem(NOTICE_VERSION_KEY);
+	  const isDismissed = localStorage.getItem(NOTICE_DISMISSED_KEY) === 'true';
+	
+	  const shouldShow = (savedVersion !== CURRENT_NOTICE_VERSION || !isDismissed);
+	  if (shouldShow) {
+	    openFirstVisitModal();
+	    return true;   // ★ モーダルを出した
+	  }
+	  return false;    // ★ 出してない
+	}
     function openFirstVisitModal() {
       const m = document.getElementById('firstVisitModal');
       if (m) {
@@ -1450,7 +1451,11 @@
     /* =============================== 起動 =============================== */
     document.addEventListener('DOMContentLoaded', async ()=>{
       // 初回起動チェック（最初に実行）
-      checkFirstVisit();
+    　const firstVisitShown = checkFirstVisit();
+	　// ★ モーダルが出てる時は、スケジュールオーバーレイは出さない
+	  if (!firstVisitShown) {
+	    showOverlay(true,'認証中...');
+	  }
       // モーダル閉じるイベント
       document.addEventListener('click', (e) => {
         const t = e.target;
@@ -1463,7 +1468,6 @@
       // UI 初期組み立て
       fillMonthOptions(JST_NOW.asDate);
 
-      showOverlay(true,'認証中...');
       // 認証状態に応じた表示（モバイルは簡略：未ログインならSupabaseのメール/パスでログイン）
       const { data:{ session } } = await supabase.auth.getSession();
       $('#loginPanel').style.display = session ? 'none' : '';
@@ -1853,6 +1857,7 @@
 </body>
 
 </html>
+
 
 
 
