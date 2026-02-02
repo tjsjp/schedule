@@ -1432,11 +1432,6 @@
       if (m) {
         m.setAttribute('aria-hidden', 'false');
         document.body.style.overflow = 'hidden';
-        // 初回モーダルが開いたら、表示中のオーバーレイのz-indexを下げる
-        const ov = document.getElementById('scheduleOverlay');
-        if (ov && ov.style.display === 'flex') {
-          ov.style.zIndex = '1000';
-        }
       }
     }
     function closeFirstVisitModal() {
@@ -1450,12 +1445,6 @@
         if (checkbox && checkbox.checked) {
           localStorage.setItem(NOTICE_DISMISSED_KEY, 'true');
           localStorage.setItem(NOTICE_VERSION_KEY, CURRENT_NOTICE_VERSION);
-        }
-        
-        // 初回モーダルが閉じたら、表示中のオーバーレイのz-indexを戻す
-        const ov = document.getElementById('scheduleOverlay');
-        if (ov && ov.style.display === 'flex') {
-          ov.style.zIndex = '5000';
         }
       }
     }
@@ -1864,4 +1853,5 @@
 </body>
 
 </html>
+
 
