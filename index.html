@@ -1420,9 +1420,7 @@
 	  const shouldShow = (savedVersion !== CURRENT_NOTICE_VERSION || !isDismissed);
 	  if (shouldShow) {
 	    openFirstVisitModal();
-	    return true;   // ★ モーダルを出した
 	  }
-	  return false;    // ★ 出してない
 	}
     function openFirstVisitModal() {
       const m = document.getElementById('firstVisitModal');
@@ -1854,6 +1852,7 @@
 </body>
 
 </html>
+
 
 
 
