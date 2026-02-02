@@ -1413,8 +1413,50 @@
         showOverlay(false);
       }
     }
+    function checkFirstVisit() {
+      const savedVersion = localStorage.getItem(NOTICE_VERSION_KEY);
+      const isDismissed = localStorage.getItem(NOTICE_DISMISSED_KEY) === 'true';
+      
+      // バージョンが異なる OR （チェックが入っていない AND バージョンが同じ）
+      // → 表示する
+      if (savedVersion !== CURRENT_NOTICE_VERSION || !isDismissed) {
+        openFirstVisitModal();
+      }
+    }
+    function openFirstVisitModal() {
+      const m = document.getElementById('firstVisitModal');
+      if (m) {
+        m.setAttribute('aria-hidden', 'false');
+        document.body.style.overflow = 'hidden';
+      }
+    }
+    function closeFirstVisitModal() {
+      const m = document.getElementById('firstVisitModal');
+      if (m) {
+        m.setAttribute('aria-hidden', 'true');
+        document.body.style.overflow = '';
+        
+        // チェックボックスの状態を確認して保存
+        const checkbox = document.getElementById('noticeDismissCheckbox');
+        if (checkbox && checkbox.checked) {
+          localStorage.setItem(NOTICE_DISMISSED_KEY, 'true');
+          localStorage.setItem(NOTICE_VERSION_KEY, CURRENT_NOTICE_VERSION);
+        }
+      }
+    }
     /* =============================== 起動 =============================== */
     document.addEventListener('DOMContentLoaded', async ()=>{
+      // 初回起動チェック（最初に実行）
+      checkFirstVisit();
+      // モーダル閉じるイベント
+      document.addEventListener('click', (e) => {
+        const t = e.target;
+        if (!(t instanceof HTMLElement)) return;
+        if (t.hasAttribute('data-first-visit-close')) {
+          e.preventDefault();
+          closeFirstVisitModal();
+        }
+      });
       // UI 初期組み立て
       fillMonthOptions(JST_NOW.asDate);
 
@@ -1808,4 +1850,5 @@
 </body>
 
 </html>
+
 
