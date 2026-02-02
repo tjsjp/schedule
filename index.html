@@ -298,22 +298,24 @@
     window.holiday_jp = holiday_jp; // ← 公開 
     window.isHoliday = (ymd) => { try { return !!holiday_jp.isHoliday(toDate(ymd)); } catch { return false; } };
     /* =============================== ダーティ管理状態 =============================== */
-    function showOverlay(show = true,msg = '処理中...') {
-      const ov = document.getElementById('scheduleOverlay');
-      if (!ov) return;
-      if (show){
-        const textEl = ov.querySelector('.overlay-text');
-        // 改行を<br>に変換して複数行表示に対応
-        if (msg.includes('\n')) {
-          textEl.innerHTML = msg.split('\n').join('<br>');
-        } else {
-          textEl.textContent = msg;
-        }
-        ov.style.display = 'flex';
-      }else{
-        ov.style.display = 'none';
-      }
-    }
+function showOverlay(show = true, msg = '処理中...') {
+  const ov = document.getElementById('scheduleOverlay');
+  if (!ov) return;
+
+  const stack = new Error().stack; // ★誰が呼んだか
+
+  console.log('[showOverlay]', show ? 'SHOW' : 'HIDE', msg);
+  if (!show) console.log('[showOverlay] HIDE stack:\n', stack);
+
+  if (show) {
+    const textEl = ov.querySelector('.overlay-text');
+    if (msg.includes('\n')) textEl.innerHTML = msg.split('\n').join('<br>');
+    else textEl.textContent = msg;
+    ov.style.display = 'flex';
+  } else {
+    ov.style.display = 'none';
+  }
+}
     
     const dirtyCells = new Set();
     function cellKey(y,x){ return `${y}:${x}`; }
@@ -1857,6 +1859,7 @@
 </body>
 
 </html>
+
 
 
 
