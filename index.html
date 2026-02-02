@@ -217,6 +217,9 @@
     let lastMonthSelectValue = '';
     let memoTargetEmployeeId = null;
     const CUSTOM_KEY = 'schedulesApp:customEmployeeIds';
+	const NOTICE_VERSION_KEY = 'schedulesApp:noticeVersion'; // バージョン番号を保存
+    const NOTICE_DISMISSED_KEY = 'schedulesApp:noticeDismissed'; // チェックボックスの状態を保存
+    const CURRENT_NOTICE_VERSION = '1.0.0'; // 現在のバージョン番号（必要に応じて変更）
     function getSavedCustomIds() {
       try { return JSON.parse(localStorage.getItem(CUSTOM_KEY) || '[]').map(String); } catch { return []; }
     }
@@ -1850,5 +1853,6 @@
 </body>
 
 </html>
+
 
 
