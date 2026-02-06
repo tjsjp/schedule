@@ -254,18 +254,49 @@
       document.getElementById('appPanel').style.display = 'none';
     }
     
+
+    let refreshInFlight = null;
+    // 例：30秒未満なら refresh する
+    const MIN_TTL_SEC = 30;
+
     async function getActiveSessionOrLogout() {
       const { data: { session } } = await supabase.auth.getSession();
-      const now = Math.floor(Date.now() / 1000);
-      const exp = session?.expires_at ?? 0;
-    
-      // セッションなし or アクセストークン期限切れ → ログアウト＆ログイン要求
-      if (!session || !session.access_token || exp <= now) {
-        try { await supabase.auth.signOut({ scope: 'local' }); } catch (err) {}
-        showLoginModal();                // ← 既存のモーダル展開関数を呼ぶ
-        throw new Error('session_expired');
+
+      if (!session?.access_token) {
+        await supabase.auth.signOut({ scope: 'local' });
+        showLoginModal();
+        throw new Error('no_session');
       }
-      return session;
+
+      const now = Math.floor(Date.now() / 1000);
+      const exp = session.expires_at ?? 0;
+      const ttl = exp - now;
+
+      // まだ十分生きてる → 何もしない
+      if (ttl > MIN_TTL_SEC) {
+        return session;
+      }
+
+      // ここから refresh
+      if (!refreshInFlight) {
+        refreshInFlight = (async () => {
+          try {
+            const { data, error } = await supabase.auth.refreshSession();
+            if (error || !data?.session) throw error;
+            return data.session;
+          } finally {
+            refreshInFlight = null;
+          }
+        })();
+      }
+
+      try {
+        return await refreshInFlight;
+      } catch {
+        await supabase.auth.signOut({ scope: 'local' });
+        showLoginModal();
+        throw new Error('refresh_failed');
+      }
     }
     // --- 失効・サインアウト監視（グローバル） ---
     supabase.auth.onAuthStateChange((evt) => {
