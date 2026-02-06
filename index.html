@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
@@ -88,7 +88,6 @@
     /* Help modal (mobile) */
     .help-modal{ position:fixed; inset:0; display:none; z-index:10000; }
     .help-modal[aria-hidden="false"]{ display:block; }
-    #firstVisitModal { z-index:10002; }
     .help-backdrop{ position:absolute; inset:0; background:rgba(0,0,0,.4); }
     .help-panel{
       position:relative; max-width:640px; margin:8vh auto; background:#fff;
@@ -180,7 +179,7 @@
       display: none;
       align-items: center;
       justify-content: center;
-      z-index: 10001;
+      z-index: 10001; /* help-modal (10000) より上に */
       font-size: 1.5rem;
       color: #333;
       backdrop-filter: blur(2px);
@@ -218,7 +217,7 @@
     let lastMonthSelectValue = '';
     let memoTargetEmployeeId = null;
     const CUSTOM_KEY = 'schedulesApp:customEmployeeIds';
-	const NOTICE_VERSION_KEY = 'schedulesApp:noticeVersion'; // バージョン番号を保存
+    const NOTICE_VERSION_KEY = 'schedulesApp:noticeVersion'; // バージョン番号を保存
     const NOTICE_DISMISSED_KEY = 'schedulesApp:noticeDismissed'; // チェックボックスの状態を保存
     const CURRENT_NOTICE_VERSION = '1.0.0'; // 現在のバージョン番号（必要に応じて変更）
     function getSavedCustomIds() {
@@ -254,18 +253,48 @@
       document.getElementById('appPanel').style.display = 'none';
     }
     
+    let refreshInFlight = null;
+    // 例：30秒未満なら refresh する
+    const MIN_TTL_SEC = 30;
+
     async function getActiveSessionOrLogout() {
       const { data: { session } } = await supabase.auth.getSession();
-      const now = Math.floor(Date.now() / 1000);
-      const exp = session?.expires_at ?? 0;
-    
-      // セッションなし or アクセストークン期限切れ → ログアウト＆ログイン要求
-      if (!session || !session.access_token || exp <= now) {
-        try { await supabase.auth.signOut({ scope: 'local' }); } catch (err) {}
-        showLoginModal();                // ← 既存のモーダル展開関数を呼ぶ
-        throw new Error('session_expired');
+
+      if (!session?.access_token) {
+        await supabase.auth.signOut({ scope: 'local' });
+        showLoginModal();
+        throw new Error('no_session');
       }
-      return session;
+
+      const now = Math.floor(Date.now() / 1000);
+      const exp = session.expires_at ?? 0;
+      const ttl = exp - now;
+
+      // まだ十分生きてる → 何もしない
+      if (ttl > MIN_TTL_SEC) {
+        return session;
+      }
+
+      // ここから refresh
+      if (!refreshInFlight) {
+        refreshInFlight = (async () => {
+          try {
+            const { data, error } = await supabase.auth.refreshSession();
+            if (error || !data?.session) throw error;
+            return data.session;
+          } finally {
+            refreshInFlight = null;
+          }
+        })();
+      }
+
+      try {
+        return await refreshInFlight;
+      } catch {
+        await supabase.auth.signOut({ scope: 'local' });
+        showLoginModal();
+        throw new Error('refresh_failed');
+      }
     }
     // --- 失効・サインアウト監視（グローバル） ---
     supabase.auth.onAuthStateChange((evt) => {
@@ -299,18 +328,29 @@
     window.holiday_jp = holiday_jp; // ← 公開 
     window.isHoliday = (ymd) => { try { return !!holiday_jp.isHoliday(toDate(ymd)); } catch { return false; } };
     /* =============================== ダーティ管理状態 =============================== */
-	function showOverlay(show = true, msg = '処理中...') {
-	  const ov = document.getElementById('scheduleOverlay');
-	  if (!ov) return;
-	  if (show) {
-	    const textEl = ov.querySelector('.overlay-text');
-	    if (msg.includes('\n')) textEl.innerHTML = msg.split('\n').join('<br>');
-	    else textEl.textContent = msg;
-	    ov.style.display = 'flex';
-	  } else {
-	    ov.style.display = 'none';
-	  }
-	}
+    function showOverlay(show = true,msg = '処理中...') {
+      const ov = document.getElementById('scheduleOverlay');
+      if (!ov) return;
+      
+      // 初回モーダルの表示状態をチェック
+      const firstVisitModal = document.getElementById('firstVisitModal');
+      const isFirstVisitModalOpen = firstVisitModal && firstVisitModal.getAttribute('aria-hidden') === 'false';
+      
+      if (show){
+        const textEl = ov.querySelector('.overlay-text');
+        // 改行を<br>に変換して複数行表示に対応
+        if (msg.includes('\n')) {
+          textEl.innerHTML = msg.split('\n').join('<br>');
+        } else {
+          textEl.textContent = msg;
+        }
+        ov.style.display = 'flex';
+        // 初回モーダルが開いている場合はz-indexを下げる、それ以外は通常のz-index
+        ov.style.zIndex = isFirstVisitModalOpen ? '1000' : '10001';
+      }else{
+        ov.style.display = 'none';
+      }
+    }
     
     const dirtyCells = new Set();
     function cellKey(y,x){ return `${y}:${x}`; }
@@ -1413,26 +1453,41 @@
         showOverlay(false);
       }
     }
-	function checkFirstVisit() {
-	  const savedVersion = localStorage.getItem(NOTICE_VERSION_KEY);
-	  const isDismissed = localStorage.getItem(NOTICE_DISMISSED_KEY) === 'true';
-	
-	  const shouldShow = (savedVersion !== CURRENT_NOTICE_VERSION || !isDismissed);
-	  if (shouldShow) {
-	    openFirstVisitModal();
-	  }
-	}
+	  
+    function checkFirstVisit() {
+      const savedVersion = localStorage.getItem(NOTICE_VERSION_KEY);
+      const isDismissed = localStorage.getItem(NOTICE_DISMISSED_KEY) === 'true';
+      
+      // 初回モーダルが非表示のときはz-indexを下げる
+      const m = document.getElementById('firstVisitModal');
+      if (m && m.getAttribute('aria-hidden') === 'true') {
+        m.style.zIndex = '1';
+      }
+      
+      // バージョンが異なる OR （チェックが入っていない AND バージョンが同じ）
+      // → 表示する
+      if (savedVersion !== CURRENT_NOTICE_VERSION || !isDismissed) {
+        openFirstVisitModal();
+      }
+    }
     function openFirstVisitModal() {
       const m = document.getElementById('firstVisitModal');
       if (m) {
         m.setAttribute('aria-hidden', 'false');
+        m.style.zIndex = '10000'; // 初回モーダルを前面に
         document.body.style.overflow = 'hidden';
+        // 初回モーダルが開いたら、表示中のオーバーレイのz-indexを下げる
+        const ov = document.getElementById('scheduleOverlay');
+        if (ov && ov.style.display === 'flex') {
+          ov.style.zIndex = '1000';
+        }
       }
     }
     function closeFirstVisitModal() {
       const m = document.getElementById('firstVisitModal');
       if (m) {
         m.setAttribute('aria-hidden', 'true');
+        m.style.zIndex = '1'; // 初回モーダルを後ろに（非表示でもz-indexを下げる）
         document.body.style.overflow = '';
         
         // チェックボックスの状態を確認して保存
@@ -1441,13 +1496,23 @@
           localStorage.setItem(NOTICE_DISMISSED_KEY, 'true');
           localStorage.setItem(NOTICE_VERSION_KEY, CURRENT_NOTICE_VERSION);
         }
+        
+        // 初回モーダルが閉じたら、表示中のオーバーレイのz-indexを戻す
+        const ov = document.getElementById('scheduleOverlay');
+        if (ov && ov.style.display === 'flex') {
+          ov.style.zIndex = '10001';
+        }
       }
     }
     /* =============================== 起動 =============================== */
     document.addEventListener('DOMContentLoaded', async ()=>{
-      // 初回起動チェック（最初に実行）
-	　showOverlay(true,'認証中...');
-    　checkFirstVisit();
+      // 初回モーダルが非表示の場合はz-indexを下げる（最初に実行）
+      const firstVisitModal = document.getElementById('firstVisitModal');
+      if (firstVisitModal && firstVisitModal.getAttribute('aria-hidden') === 'true') {
+        firstVisitModal.style.zIndex = '1';
+      }
+      // 初回起動チェック
+      checkFirstVisit();
       // モーダル閉じるイベント
       document.addEventListener('click', (e) => {
         const t = e.target;
@@ -1459,7 +1524,7 @@
       });
       // UI 初期組み立て
       fillMonthOptions(JST_NOW.asDate);
-
+      showOverlay(true,'認証中...');
       // 認証状態に応じた表示（モバイルは簡略：未ログインならSupabaseのメール/パスでログイン）
       const { data:{ session } } = await supabase.auth.getSession();
       $('#loginPanel').style.display = session ? 'none' : '';
@@ -1757,10 +1822,9 @@
       <h2 id="helpTitle">使い方</h2>
       <div id="helpBody" class="help-body">
 
-        <br><strong>変更履歴</strong><br>
-		※表示に時間がかかる場合があります<br>
-        ※30秒ほど待っても表示されないとき、<br>
-		※一度ブラウザの更新（リロード）をお願いします
+        <p>※URLや仕様は変更になる可能性があります<br>
+        <br><strong>テスト版変更履歴</strong><br>
+        ※修正を完全に適用するにはshift＋F5で更新をしてください※<br>
         NEW スマホ版・PC版ともに自分の列は赤文字で表示するように修正しました<br>
 	NEW iOS26でアイコンの背景が黒になる不具合を修正しました<br>
         経理・事務の予定表の欄を作成しました<br>
@@ -1806,34 +1870,29 @@
       </div>
     </div>
   </div>
-<div id="firstVisitModal" class="help-modal" aria-hidden="true">
-  <div class="help-backdrop" data-first-visit-close></div>
-
-  <div class="help-panel" role="dialog" aria-modal="true" aria-labelledby="firstVisitTitle">
-    <button class="help-close" type="button" title="閉じる" data-first-visit-close>&times;</button>
-    <h2 id="firstVisitTitle">表示されない・エラーなどに関するお知らせ</h2>
-
-    <div class="help-body">
-      <p>
-        大塚商会新設のセキュリティ機器の影響で<br>
-        表示に時間がかかる場合があります<br>
-        30秒ほど待っても表示されないとき、<br>
-		一度ブラウザの更新（リロード）をお願いします
-        さらに1分ほど待っても表示されない場合、<br>
-        ・画面上に表示されている文字はどんな文字か<br>
-        ・どの回線・端末からの接続
-		  （PC、スマホ、社内Wifi、ドコモ回線等）か<br>
-        をお手数ですが、岩井にご連絡ください<br>
-        お手数をおかけします、よろしくお願いします<br>
-      </p>
-
-      <label style="display:flex; align-items:center; gap:8px; margin-top:12px;">
-        <input type="checkbox" id="noticeDismissCheckbox">
-        <span style="color:red;">次回起動時に表示しない</span>
-      </label>
-    </div>
+  <div id="firstVisitModal" class="help-modal" aria-hidden="true">
+    <div class="help-backdrop" data-first-visit-close></div>
+    <div class="help-panel" role="dialog" aria-modal="true" aria-labelledby="firstVisitTitle">
+      <button class="help-close" type="button" title="閉じる" data-first-visit-close>&times;</button>
+      <h2 id="firstVisitTitle">表示されない・エラーなどに関するお知らせ</h2>
+      <div class="help-body">
+        <p>
+          大塚商会が新しく設置したセキュリティ機器の影響で<br>
+          表示に時間がかかる場合があります<br>
+          30秒ほど待っても表示されないとき、一度ブラウザの更新（リロード）をお願いします<br>
+          さらに1分ほど待っても表示されない場合、<br>
+          ・画面上に表示されている文字はどんな文字か<br>
+          ・どの回線・端末からの接続（PC、スマホ、社内Wifi、ドコモ回線等）か<br>
+          をお手数ですが、岩井にご連絡ください<br>
+          お手数をおかけします、よろしくお願いします<br>
+        </p>
+        
+        <label style="display:flex; align-items:center; gap:8px; margin-top:12px;">
+          <input type="checkbox" id="noticeDismissCheckbox">
+          <span style="color:red;">次回起動時に表示しない</span>
+        </label>
+      </div>
   </div>
-</div>
   <div id="customModal" class="help-modal" aria-hidden="true">
     <div class="help-backdrop" data-custom-close></div>
     <div class="help-panel" role="dialog" aria-modal="true" aria-labelledby="customTitle">
@@ -1855,17 +1914,6 @@
 </body>
 
 </html>
-
-
-
-
-
-
-
-
-
-
-
 
 
 
