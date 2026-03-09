@@ -325,7 +325,7 @@
     const CUSTOM_KEY = 'schedulesApp:customEmployeeIds';
     const NOTICE_VERSION_KEY = 'schedulesApp:noticeVersion'; // バージョン番号を保存
     const NOTICE_DISMISSED_KEY = 'schedulesApp:noticeDismissed'; // チェックボックスの状態を保存
-    const CURRENT_NOTICE_VERSION = '1.0.0'; // 現在のバージョン番号（必要に応じて変更）
+    const CURRENT_NOTICE_VERSION = '1.1.0'; // 現在のバージョン番号（必要に応じて変更）
     function getSavedCustomIds() {
       try { return JSON.parse(localStorage.getItem(CUSTOM_KEY) || '[]').map(String); } catch { return []; }
     }
@@ -2176,17 +2176,16 @@
     <div class="help-backdrop" data-first-visit-close></div>
     <div class="help-panel" role="dialog" aria-modal="true" aria-labelledby="firstVisitTitle">
       <button class="help-close" type="button" title="閉じる" data-first-visit-close>&times;</button>
-      <h2 id="firstVisitTitle">表示されない・エラーなどに関するお知らせ</h2>
+      <h2 id="firstVisitTitle">お知らせ表示方法の変更</h2>
       <div class="help-body">
         <p>
-          大塚商会が新しく設置したセキュリティ機器の影響で<br>
-          表示に時間がかかる場合があります<br>
-          30秒ほど待っても表示されないとき、一度ブラウザの更新（リロード）をお願いします<br>
-          さらに1分ほど待っても表示されない場合、<br>
-          ・画面上に表示されている文字はどんな文字か<br>
-          ・どの回線・端末からの接続（PC、スマホ、社内Wifi、ドコモ回線等）か<br>
-          をお手数ですが、岩井にご連絡ください<br>
-          お手数をおかけします、よろしくお願いします<br>
+          お知らせの表示方法・編集方法を変更しました<br>
+        以前までと違い、初回表示時は閉じているので<br>
+		内容確認したい場合、タップ・クリックで展開してください<br>
+		また管理者の方は投稿済みの内容もお知らせから編集可能です<br>
+		　エラーやもんだい
+　　　　　エラーや問題などあればをお手数ですが、岩井にご連絡ください<br>
+        　よろしくお願いします<br>
         </p>
         
         <label style="display:flex; align-items:center; gap:8px; margin-top:12px;">
