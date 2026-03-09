@@ -57,7 +57,10 @@
     .muted{ color:#666; font-size:1em; }
     .row{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
     /* 親がスクロールを奪わないように（重要） */
-    #companyListBody { max-height: 30vh; overflow: auto; }
+    #companyListBody {
+      max-height: none;
+      overflow: visible;
+    }
     /* 片手操作向けにボタン大きめ */
     .btn{ padding:10px 14px; border-radius:10px; border:1px solid #bbb; background:#fff; }
     .btn-primary{ background:#1a73e8; color:#fff; border-color:#1a73e8; }
@@ -88,7 +91,6 @@
     /* Help modal (mobile) */
     .help-modal{ position:fixed; inset:0; display:none; z-index:10000; }
     .help-modal[aria-hidden="false"]{ display:block; }
-    #firstVisitModal { z-index:10002; }
     .help-backdrop{ position:absolute; inset:0; background:rgba(0,0,0,.4); }
     .help-panel{
       position:relative; max-width:640px; margin:8vh auto; background:#fff;
@@ -180,7 +182,7 @@
       display: none;
       align-items: center;
       justify-content: center;
-      z-index: 10001;
+      z-index: 10001; /* help-modal (10000) より上に */
       font-size: 1.5rem;
       color: #333;
       backdrop-filter: blur(2px);
@@ -190,6 +192,109 @@
       border-radius: 8px;
       background: rgba(255,255,255,0.8);
       box-shadow: 0 0 10px rgba(0,0,0,0.1);
+    }
+    .company-event-item{
+      border:1px solid #e5e5e5;
+      border-radius:10px;
+      background:#fff;
+      padding:8px 10px;
+      margin:8px 0;
+    }
+    .company-event-head{
+      display:flex;
+      gap:8px;
+      align-items:flex-start;
+    }
+    .company-event-actions{
+      display:flex;
+      gap:6px;
+      flex:0 0 auto;
+    }
+    .company-event-main{
+      min-width:0;
+      flex:1 1 auto;
+    }
+    .company-event-summary{
+      cursor:pointer;
+      user-select:none;
+    }
+    .company-event-title{
+      font-weight:700;
+      white-space:pre-wrap;
+      word-break:break-word;
+    }
+    .company-event-meta{
+      color:#666;
+      font-size:.92em;
+      margin-bottom:2px;
+    }
+    .company-event-details{
+      display:none;
+      margin-top:8px;
+      padding-top:8px;
+      border-top:1px dashed #ddd;
+    }
+    .company-event-item.is-open .company-event-details{
+      display:block;
+    }
+    .company-event-memo{
+      white-space:pre-wrap;
+      word-break:break-word;
+    }
+    .company-event-kind-notice{
+      border-left:4px solid #9c27b0;
+    }
+    .company-event-kind-event{
+      border-left:4px solid #1a73e8;
+    }
+
+    .modal{
+      position:fixed;
+      inset:0;
+      display:none;
+      z-index:11000;
+    }
+    .modal[aria-hidden="false"]{
+      display:block;
+    }
+    .modal-backdrop{
+      position:absolute;
+      inset:0;
+      background:rgba(0,0,0,.4);
+    }
+    .modal-panel{
+      position:relative;
+      width:min(720px, calc(100vw - 24px));
+      margin:5vh auto;
+      background:#fff;
+      border-radius:14px;
+      padding:16px;
+      box-shadow:0 10px 30px rgba(0,0,0,.18);
+    }
+    .modal-close{
+      position:absolute;
+      right:10px;
+      top:8px;
+      border:0;
+      background:transparent;
+      font-size:22px;
+      cursor:pointer;
+    }
+    .modal-grid{
+      display:grid;
+      grid-template-columns:1fr 1fr;
+      gap:10px;
+    }
+    .modal-grid .full{
+      grid-column:1 / -1;
+    }
+    .modal-grid label{
+      display:flex;
+      flex-direction:column;
+      gap:4px;
+    }
+    .readonly-like{
+      background:#f5f5f5;
     }
   </style>
 
@@ -218,7 +323,7 @@
     let lastMonthSelectValue = '';
     let memoTargetEmployeeId = null;
     const CUSTOM_KEY = 'schedulesApp:customEmployeeIds';
-	const NOTICE_VERSION_KEY = 'schedulesApp:noticeVersion'; // バージョン番号を保存
+    const NOTICE_VERSION_KEY = 'schedulesApp:noticeVersion'; // バージョン番号を保存
     const NOTICE_DISMISSED_KEY = 'schedulesApp:noticeDismissed'; // チェックボックスの状態を保存
     const CURRENT_NOTICE_VERSION = '1.0.0'; // 現在のバージョン番号（必要に応じて変更）
     function getSavedCustomIds() {
@@ -254,7 +359,6 @@
       document.getElementById('appPanel').style.display = 'none';
     }
     
-
     let refreshInFlight = null;
     // 例：30秒未満なら refresh する
     const MIN_TTL_SEC = 30;
@@ -330,18 +434,29 @@
     window.holiday_jp = holiday_jp; // ← 公開 
     window.isHoliday = (ymd) => { try { return !!holiday_jp.isHoliday(toDate(ymd)); } catch { return false; } };
     /* =============================== ダーティ管理状態 =============================== */
-	function showOverlay(show = true, msg = '処理中...') {
-	  const ov = document.getElementById('scheduleOverlay');
-	  if (!ov) return;
-	  if (show) {
-	    const textEl = ov.querySelector('.overlay-text');
-	    if (msg.includes('\n')) textEl.innerHTML = msg.split('\n').join('<br>');
-	    else textEl.textContent = msg;
-	    ov.style.display = 'flex';
-	  } else {
-	    ov.style.display = 'none';
-	  }
-	}
+    function showOverlay(show = true,msg = '処理中...') {
+      const ov = document.getElementById('scheduleOverlay');
+      if (!ov) return;
+      
+      // 初回モーダルの表示状態をチェック
+      const firstVisitModal = document.getElementById('firstVisitModal');
+      const isFirstVisitModalOpen = firstVisitModal && firstVisitModal.getAttribute('aria-hidden') === 'false';
+      
+      if (show){
+        const textEl = ov.querySelector('.overlay-text');
+        // 改行を<br>に変換して複数行表示に対応
+        if (msg.includes('\n')) {
+          textEl.innerHTML = msg.split('\n').join('<br>');
+        } else {
+          textEl.textContent = msg;
+        }
+        ov.style.display = 'flex';
+        // 初回モーダルが開いている場合はz-indexを下げる、それ以外は通常のz-index
+        ov.style.zIndex = isFirstVisitModalOpen ? '1000' : '10001';
+      }else{
+        ov.style.display = 'none';
+      }
+    }
     
     const dirtyCells = new Set();
     function cellKey(y,x){ return `${y}:${x}`; }
@@ -1051,45 +1166,126 @@
       return data || [];
     }
 
+    let companyEventsCache = [];
+
+    function buildDateLabel(e){
+      const start = e?.date ? String(e.date) : '';
+      const end = e?.date_end ? String(e.date_end) : '';
+      return (end && end !== start) ? `${start} ～ ${end}` : start;
+    }
+
+    function buildTimeLabel(e){
+      const t1 = e?.timestart ? String(e.timestart).slice(0,5) : '';
+      const t2 = e?.timeend ? String(e.timeend).slice(0,5) : '';
+      return t1 && t2 ? `${t1}～${t2}` : (t1 || '');
+    }
+
+    function findCompanyEventById(id){
+      return companyEventsCache.find(x => String(x.id) === String(id)) || null;
+    }
+
+    function openCompanyEditModal(e){
+      document.getElementById('ceId').value = e?.id ?? '';
+      document.getElementById('ceKind').value = e?.kind === 'notice' ? 'notice' : 'event';
+      document.getElementById('ceDate').value = e?.date || '';
+      document.getElementById('ceDateEnd').value = e?.date_end || '';
+      document.getElementById('ceStart').value = e?.timestart || '';
+      document.getElementById('ceEnd').value = e?.timeend || '';
+      document.getElementById('ceTitle').value = e?.event || '';
+      document.getElementById('ceMemo').value = e?.memo || '';
+      document.getElementById('ceDateLabel').value = buildDateLabel(e);
+
+      syncCompanyEditTimeVisibility();
+      document.getElementById('companyEditModal').setAttribute('aria-hidden', 'false');
+      document.body.style.overflow = 'hidden';
+    }
+
+    function closeCompanyEditModal(){
+      document.getElementById('companyEditModal').setAttribute('aria-hidden', 'true');
+      document.body.style.overflow = '';
+    }
+
+    function syncCompanyEditTimeVisibility(){
+      const kind = document.getElementById('ceKind').value;
+      const showTime = kind === 'event';
+
+      const wrapStart = document.getElementById('ceStart').closest('label');
+      const wrapEnd = document.getElementById('ceEnd').closest('label');
+
+      if (wrapStart) wrapStart.style.display = showTime ? '' : 'none';
+      if (wrapEnd) wrapEnd.style.display = showTime ? '' : 'none';
+
+      if (!showTime) {
+        document.getElementById('ceStart').value = '';
+        document.getElementById('ceEnd').value = '';
+      }
+    }
+
     async function renderCompanyList(ym){
       const box = document.getElementById('companyListBody');
       const { isProbablyMobile } = detectEnvironment();
-      const canDeleteNotice = !!currentUser?.is_admin && !isProbablyMobile;
+      const canManage = !!currentUser?.is_admin && !isProbablyMobile;
+
       try{
         const evs = await fetchCompanyEventsForMonth(ym);
-        if(!evs.length){ box.innerHTML = '<p class="muted">該当なし</p>'; return; }
+        companyEventsCache = evs || [];
 
-        const notices = evs.filter(e=>e.kind==='notice');
-        const normals = evs.filter(e=>e.kind!=='notice');
-
-        let html='';
-        // お知らせ(優先)
-        for(const e of notices){
-          const del = canDeleteNotice ? `<button class="ev-del" data-ev-id="${e.id}" style="color:#e53935;background:transparent;border:none;cursor:pointer">削除</button>` : '';
-          html += `<div class="ev-item" style="border-left:4px solid #9c27b0;padding-left:8px;margin:6px 0;display:flex;gap:8px;align-items:flex-start;">
-            ${del}<div class="ev-main"><div style="font-weight:700;white-space:pre-wrap">${esc(e.event)}</div>${e.memo?`<div style="white-space:pre-wrap">${esc(e.memo)}</div>`:''}</div>
-          </div>`;
+        if(!companyEventsCache.length){
+          box.innerHTML = '<p class="muted">該当なし</p>';
+          return;
         }
-        // 通常イベント（開始日～終了日で1行表示。月跨ぎは取得クエリで両月に含まれる）
-        const items = normals.slice().sort((a,b)=>{
-          const ad=(a.date||''); const bd=(b.date||'');
-          if(ad!==bd) return ad.localeCompare(bd);
-          return (a.timestart||'').localeCompare(b.timestart||'');
+
+        const items = companyEventsCache.slice().sort((a,b)=>{
+          const ak = `${a.date || ''}|${a.timestart || ''}|${a.id || ''}`;
+          const bk = `${b.date || ''}|${b.timestart || ''}|${b.id || ''}`;
+          return ak.localeCompare(bk);
         });
-        if(items.length){ html += `<ul style="margin:0 0 8px 16px;padding:0">`; }
-        for (const e of items) {
-          const hasEnd = !!e.date_end && e.date_end !== e.date;
-          const dateLabel = hasEnd ? `${esc(e.date)} ～ ${esc(e.date_end)}` : `${esc(e.date)}`;
-          const t1=e.timestart?e.timestart.slice(0,5):'';
-          const t2=e.timeend?e.timeend.slice(0,5):'';
-          const tt=t1&&t2?`${t1}～${t2}`:(t1||'');
-          const del = canDeleteNotice ? `<button class="ev-del" data-ev-id="${e.id}" style="color:#e53935;background:transparent;border:none;cursor:pointer">削除</button>` : '';
-          html += `<li class="ev-item" style="display:flex;gap:8px;align-items:flex-start;">
-            ${del}<div class="ev-main"><div class="muted">・${dateLabel}</div><strong style="white-space:pre-wrap">${esc(e.event)}</strong> ${tt}${e.memo?`<div class="muted" style="white-space:pre-wrap">${esc(e.memo)}</div>`:''}</div>
-          </li>`;
-        }
-        if(items.length){ html += `</ul>`; }
-        box.innerHTML = html;
+
+        box.innerHTML = items.map((e)=>{
+          const kindClass = e.kind === 'notice'
+            ? 'company-event-kind-notice'
+            : 'company-event-kind-event';
+
+          const dateLabel = buildDateLabel(e);
+          const timeLabel = buildTimeLabel(e);
+          const metaLabel = e.kind === 'notice'
+            ? 'お知らせ'
+            : ['行事', dateLabel, timeLabel].filter(Boolean).join(' / ');
+
+          const editBtn = canManage
+            ? `<button type="button" class="ev-edit btn" data-ev-id="${e.id}">編集</button>`
+            : '';
+
+          const delBtn = canManage
+            ? `<button type="button" class="ev-del btn" data-ev-id="${e.id}" style="color:#e53935;">削除</button>`
+            : '';
+
+          const detailHtml = `
+            <div class="company-event-details">
+              ${e.memo
+                ? `<div class="company-event-memo">${esc(e.memo)}</div>`
+                : `<div class="muted">メモなし</div>`}
+            </div>
+          `;
+
+          return `
+            <div class="company-event-item ${kindClass}" data-ev-id="${e.id}">
+              <div class="company-event-head">
+                <div class="company-event-actions">
+                  ${editBtn}
+                  ${delBtn}
+                </div>
+                <div class="company-event-main">
+                  <div class="company-event-summary" data-ev-toggle="${e.id}">
+                    <div class="company-event-meta">${esc(metaLabel)}</div>
+                    <div class="company-event-title">${esc(e.event)}</div>
+                  </div>
+                  ${detailHtml}
+                </div>
+              </div>
+            </div>
+          `;
+        }).join('');
       }catch(e){
         console.error(e);
         box.textContent = '読み込みに失敗しました';
@@ -1110,18 +1306,74 @@
       return j??{};
     }
 
+    document.getElementById('ceKind').addEventListener('change', syncCompanyEditTimeVisibility);
+
     document.getElementById('noticePanel').addEventListener('click', async (e)=>{
-      if (detectEnvironment().isProbablyMobile) return;
-      const btn = e.target instanceof HTMLElement ? e.target.closest('button.ev-del') : null; if(!btn) return;
-      if(!currentUser?.is_admin) return alert('権限がありません');
-      const id = btn.getAttribute('data-ev-id'); if(!id) return;
-      if(!confirm('この書き込みを削除します。よろしいですか？')) return;
-      try{
-        await deleteCompanyEventById(id);
-        await refreshView({ companyOnly: true });
-        alert('削除しました');
-      }catch(err){ alert('削除に失敗しました：'+err.message); }
+      const target = e.target instanceof HTMLElement ? e.target : null;
+      if (!target) return;
+
+      const editBtn = target.closest('button.ev-edit');
+      if (editBtn) {
+        e.preventDefault();
+        e.stopPropagation();
+
+        if (!currentUser?.is_admin) {
+          alert('権限がありません');
+          return;
+        }
+
+        const id = editBtn.getAttribute('data-ev-id');
+        const ev = findCompanyEventById(id);
+        if (!ev) {
+          alert('対象データが見つかりません');
+          return;
+        }
+
+        openCompanyEditModal(ev);
+        return;
+      }
+
+      const delBtn = target.closest('button.ev-del');
+      if (delBtn) {
+        e.preventDefault();
+        e.stopPropagation();
+
+        if (!currentUser?.is_admin) {
+          alert('権限がありません');
+          return;
+        }
+
+        const id = delBtn.getAttribute('data-ev-id');
+        if (!id) return;
+        if (!confirm('この書き込みを削除します。よろしいですか？')) return;
+
+        try {
+          await deleteCompanyEventById(id);
+          await refreshView({ companyOnly:true });
+          alert('削除しました');
+        } catch (err) {
+          alert('削除に失敗しました：' + err.message);
+        }
+        return;
+      }
+
+      const toggle = target.closest('[data-ev-toggle]');
+      if (toggle) {
+        const item = toggle.closest('.company-event-item');
+        if (item) item.classList.toggle('is-open');
+        return;
+      }
     });
+
+    document.addEventListener('click', (e)=>{
+      const target = e.target instanceof HTMLElement ? e.target : null;
+      if (!target) return;
+
+      if (target.hasAttribute('data-company-edit-close')) {
+        closeCompanyEditModal();
+      }
+    });
+
     function toYMD(v){
       const pad = n => String(n).padStart(2,'0');
       if (!v) return null;
@@ -1236,31 +1488,90 @@
       }
     });
     /* ===== 会社予定登録（管理者）===== */
+    async function saveCompanyEvent(payload, successMessage = '保存しました'){
+      showOverlay(true,'保存中...');
+      try{
+        const { data:{ session } } = await supabase.auth.getSession();
+        const token = session?.access_token;
+        if(!token) throw new Error('未ログイン');
+
+        const r = await fetch(`${SUPABASE_URL}/functions/v1/company-events-upsert`,{
+          method:'POST',
+          headers:{
+            'Authorization':`Bearer ${token}`,
+            'Content-Type':'application/json'
+          },
+          body: JSON.stringify(payload)
+        });
+
+        const j = await r.json().catch(()=>({}));
+        if(!r.ok || j?.ok===false) throw new Error(j?.error || `HTTP ${r.status}`);
+
+        await refreshView({ companyOnly:true });
+        alert(successMessage);
+        return j;
+      } finally {
+        showOverlay(false);
+      }
+    }
     document.getElementById('companySaveBtn').addEventListener('click', async ()=>{
       if(!currentUser?.is_admin) return alert('権限がありません');
-      showOverlay(true,'保存中...');
+
       try{
         const kind = document.getElementById('cKind').value;
         const date = toYMD(document.getElementById('cDate').value);
         const date_end = toYMD(document.getElementById('cDateEnd').value);
-        const start = kind==='event' ? normalizeHHMM(document.getElementById('cStart').value) : null;
-        const end   = kind==='event' ? normalizeHHMM(document.getElementById('cEnd').value)   : null;
-        const title = (document.getElementById('cTitle').value||'').trim();
-        const memo  = (document.getElementById('cMemo').value||'').trim();
+        const start = kind === 'event' ? normalizeHHMM(document.getElementById('cStart').value) : null;
+        const end   = kind === 'event' ? normalizeHHMM(document.getElementById('cEnd').value) : null;
+        const title = (document.getElementById('cTitle').value || '').trim();
+        const memo  = (document.getElementById('cMemo').value || '').trim();
+
         if(!date) return alert('開始日を入力してください');
         if(!title) return alert('タイトルを入力してください');
-          const { data:{ session } } = await supabase.auth.getSession();
-          const token=session?.access_token; if(!token) throw new Error('未ログイン');
 
-          const r = await fetch(`${SUPABASE_URL}/functions/v1/company-events-upsert`,{
-          method:'POST', headers:{'Authorization':`Bearer ${token}`,'Content-Type':'application/json'},
-          body:JSON.stringify({ kind, date, date_end: date_end||null, timestart:start, timeend:end, event:title, memo })
-        });
-        const j=await r.json().catch(()=>({})); if(!r.ok || j?.ok===false) throw new Error(j?.error||`HTTP ${r.status}`);
-        await refreshView({ companyOnly: true });
-        alert('掲示板に登録しました');
-      }catch(e){ alert('登録失敗：'+e.message); } finally {
-        showOverlay(false);
+        await saveCompanyEvent({
+          kind,
+          date,
+          date_end: date_end || null,
+          timestart: start,
+          timeend: end,
+          event: title,
+          memo
+        }, '掲示板に登録しました');
+      }catch(e){
+        alert('登録失敗：' + e.message);
+      }
+    });
+    document.getElementById('companyEditSaveBtn').addEventListener('click', async ()=>{
+      if(!currentUser?.is_admin) return alert('権限がありません');
+
+      try{
+        const id = (document.getElementById('ceId').value || '').trim();
+        const kind = document.getElementById('ceKind').value;
+        const date = toYMD(document.getElementById('ceDate').value);
+        const date_end = toYMD(document.getElementById('ceDateEnd').value);
+        const timestart = kind === 'event' ? normalizeHHMM(document.getElementById('ceStart').value) : null;
+        const timeend = kind === 'event' ? normalizeHHMM(document.getElementById('ceEnd').value) : null;
+        const event = (document.getElementById('ceTitle').value || '').trim();
+        const memo = (document.getElementById('ceMemo').value || '').trim();
+
+        if(!date) return alert('開始日付を入力してください');
+        if(!event) return alert('見出しを入力してください');
+
+        await saveCompanyEvent({
+          id,
+          kind,
+          date,
+          date_end: date_end || null,
+          timestart,
+          timeend,
+          event,
+          memo
+        }, '更新しました');
+
+        closeCompanyEditModal();
+      }catch(e){
+        alert('更新失敗：' + e.message);
       }
     });
     document.getElementById('gridSaveBtn')?.addEventListener('click', async () => {
@@ -1444,26 +1755,41 @@
         showOverlay(false);
       }
     }
-	function checkFirstVisit() {
-	  const savedVersion = localStorage.getItem(NOTICE_VERSION_KEY);
-	  const isDismissed = localStorage.getItem(NOTICE_DISMISSED_KEY) === 'true';
-	
-	  const shouldShow = (savedVersion !== CURRENT_NOTICE_VERSION || !isDismissed);
-	  if (shouldShow) {
-	    openFirstVisitModal();
-	  }
-	}
+	  
+    function checkFirstVisit() {
+      const savedVersion = localStorage.getItem(NOTICE_VERSION_KEY);
+      const isDismissed = localStorage.getItem(NOTICE_DISMISSED_KEY) === 'true';
+      
+      // 初回モーダルが非表示のときはz-indexを下げる
+      const m = document.getElementById('firstVisitModal');
+      if (m && m.getAttribute('aria-hidden') === 'true') {
+        m.style.zIndex = '1';
+      }
+      
+      // バージョンが異なる OR （チェックが入っていない AND バージョンが同じ）
+      // → 表示する
+      if (savedVersion !== CURRENT_NOTICE_VERSION || !isDismissed) {
+        openFirstVisitModal();
+      }
+    }
     function openFirstVisitModal() {
       const m = document.getElementById('firstVisitModal');
       if (m) {
         m.setAttribute('aria-hidden', 'false');
+        m.style.zIndex = '10000'; // 初回モーダルを前面に
         document.body.style.overflow = 'hidden';
+        // 初回モーダルが開いたら、表示中のオーバーレイのz-indexを下げる
+        const ov = document.getElementById('scheduleOverlay');
+        if (ov && ov.style.display === 'flex') {
+          ov.style.zIndex = '1000';
+        }
       }
     }
     function closeFirstVisitModal() {
       const m = document.getElementById('firstVisitModal');
       if (m) {
         m.setAttribute('aria-hidden', 'true');
+        m.style.zIndex = '1'; // 初回モーダルを後ろに（非表示でもz-indexを下げる）
         document.body.style.overflow = '';
         
         // チェックボックスの状態を確認して保存
@@ -1472,13 +1798,23 @@
           localStorage.setItem(NOTICE_DISMISSED_KEY, 'true');
           localStorage.setItem(NOTICE_VERSION_KEY, CURRENT_NOTICE_VERSION);
         }
+        
+        // 初回モーダルが閉じたら、表示中のオーバーレイのz-indexを戻す
+        const ov = document.getElementById('scheduleOverlay');
+        if (ov && ov.style.display === 'flex') {
+          ov.style.zIndex = '10001';
+        }
       }
     }
     /* =============================== 起動 =============================== */
     document.addEventListener('DOMContentLoaded', async ()=>{
-      // 初回起動チェック（最初に実行）
-	　showOverlay(true,'認証中...');
-    　checkFirstVisit();
+      // 初回モーダルが非表示の場合はz-indexを下げる（最初に実行）
+      const firstVisitModal = document.getElementById('firstVisitModal');
+      if (firstVisitModal && firstVisitModal.getAttribute('aria-hidden') === 'true') {
+        firstVisitModal.style.zIndex = '1';
+      }
+      // 初回起動チェック
+      checkFirstVisit();
       // モーダル閉じるイベント
       document.addEventListener('click', (e) => {
         const t = e.target;
@@ -1490,7 +1826,7 @@
       });
       // UI 初期組み立て
       fillMonthOptions(JST_NOW.asDate);
-
+      showOverlay(true,'認証中...');
       // 認証状態に応じた表示（モバイルは簡略：未ログインならSupabaseのメール/パスでログイン）
       const { data:{ session } } = await supabase.auth.getSession();
       $('#loginPanel').style.display = session ? 'none' : '';
@@ -1788,10 +2124,9 @@
       <h2 id="helpTitle">使い方</h2>
       <div id="helpBody" class="help-body">
 
-        <br><strong>変更履歴</strong><br>
-		※表示に時間がかかる場合があります<br>
-        ※30秒ほど待っても表示されないとき、<br>
-		※一度ブラウザの更新（リロード）をお願いします
+        <p>※URLや仕様は変更になる可能性があります<br>
+        <br><strong>テスト版変更履歴</strong><br>
+        ※修正を完全に適用するにはshift＋F5で更新をしてください※<br>
         NEW スマホ版・PC版ともに自分の列は赤文字で表示するように修正しました<br>
 	NEW iOS26でアイコンの背景が黒になる不具合を修正しました<br>
         経理・事務の予定表の欄を作成しました<br>
@@ -1837,34 +2172,30 @@
       </div>
     </div>
   </div>
-<div id="firstVisitModal" class="help-modal" aria-hidden="true">
-  <div class="help-backdrop" data-first-visit-close></div>
-
-  <div class="help-panel" role="dialog" aria-modal="true" aria-labelledby="firstVisitTitle">
-    <button class="help-close" type="button" title="閉じる" data-first-visit-close>&times;</button>
-    <h2 id="firstVisitTitle">表示されない・エラーなどに関するお知らせ</h2>
-
-    <div class="help-body">
-      <p>
-        大塚商会新設のセキュリティ機器の影響で<br>
-        表示に時間がかかる場合があります<br>
-        30秒ほど待っても表示されないとき、<br>
-		一度ブラウザの更新（リロード）をお願いします
-        さらに1分ほど待っても表示されない場合、<br>
-        ・画面上に表示されている文字はどんな文字か<br>
-        ・どの回線・端末からの接続
-		  （PC、スマホ、社内Wifi、ドコモ回線等）か<br>
-        をお手数ですが、岩井にご連絡ください<br>
-        お手数をおかけします、よろしくお願いします<br>
-      </p>
-
-      <label style="display:flex; align-items:center; gap:8px; margin-top:12px;">
-        <input type="checkbox" id="noticeDismissCheckbox">
-        <span style="color:red;">次回起動時に表示しない</span>
-      </label>
+  <div id="firstVisitModal" class="help-modal" aria-hidden="true">
+    <div class="help-backdrop" data-first-visit-close></div>
+    <div class="help-panel" role="dialog" aria-modal="true" aria-labelledby="firstVisitTitle">
+      <button class="help-close" type="button" title="閉じる" data-first-visit-close>&times;</button>
+      <h2 id="firstVisitTitle">表示されない・エラーなどに関するお知らせ</h2>
+      <div class="help-body">
+        <p>
+          大塚商会が新しく設置したセキュリティ機器の影響で<br>
+          表示に時間がかかる場合があります<br>
+          30秒ほど待っても表示されないとき、一度ブラウザの更新（リロード）をお願いします<br>
+          さらに1分ほど待っても表示されない場合、<br>
+          ・画面上に表示されている文字はどんな文字か<br>
+          ・どの回線・端末からの接続（PC、スマホ、社内Wifi、ドコモ回線等）か<br>
+          をお手数ですが、岩井にご連絡ください<br>
+          お手数をおかけします、よろしくお願いします<br>
+        </p>
+        
+        <label style="display:flex; align-items:center; gap:8px; margin-top:12px;">
+          <input type="checkbox" id="noticeDismissCheckbox">
+          <span style="color:red;">次回起動時に表示しない</span>
+        </label>
+      </div>
     </div>
   </div>
-</div>
   <div id="customModal" class="help-modal" aria-hidden="true">
     <div class="help-backdrop" data-custom-close></div>
     <div class="help-panel" role="dialog" aria-modal="true" aria-labelledby="customTitle">
@@ -1883,18 +2214,65 @@
     <div class="overlay-text">処理中...</div>
   </div>
   <footer></footer>
+  <div id="companyEditModal" class="modal" aria-hidden="true">
+    <div class="modal-backdrop" data-company-edit-close></div>
+    <div class="modal-panel">
+      <button type="button" class="modal-close" data-company-edit-close>×</button>
+      <h3 style="margin-top:0;">会社予定 編集</h3>
+
+      <div class="modal-grid">
+        <input type="hidden" id="ceId">
+
+        <label>
+          種別
+          <select id="ceKind">
+            <option value="notice">お知らせ</option>
+            <option value="event">行事</option>
+          </select>
+        </label>
+
+        <label>
+          dateLabel
+          <input id="ceDateLabel" type="text" class="readonly-like" readonly>
+        </label>
+
+        <label>
+          開始日付
+          <input id="ceDate" type="date">
+        </label>
+
+        <label>
+          終了日付
+          <input id="ceDateEnd" type="date">
+        </label>
+
+        <label>
+          開始時間
+          <input id="ceStart" type="time">
+        </label>
+
+        <label>
+          終了時間
+          <input id="ceEnd" type="time">
+        </label>
+
+        <label class="full">
+          見出し
+          <input id="ceTitle" type="text" maxlength="2000">
+        </label>
+
+        <label class="full">
+          e.memo
+          <textarea id="ceMemo" rows="6" maxlength="4000"></textarea>
+        </label>
+      </div>
+
+      <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:14px;">
+        <button type="button" class="btn" data-company-edit-close>閉じる</button>
+        <button type="button" id="companyEditSaveBtn" class="btn btn-primary">保存</button>
+      </div>
+    </div>
+  </div>
 </body>
-
 </html>
-
-
-
-
-
-
-
-
-
-
-
 
