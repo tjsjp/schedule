@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
@@ -175,6 +175,69 @@
 
     /* 各パネル共通 */
     .quick-section{ margin:12px; }
+    .memo-months-grid {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 8px;
+      width: 100%;
+    }
+    .memo-month-col {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      min-width: 0;
+    }
+    .memo-month-col label {
+      font-size: 0.85em;
+      color: #666;
+      font-weight: 600;
+    }
+    .memo-month-col label.memo-month-current {
+      color: #c00;
+    }
+    .memo-month-col textarea {
+      width: 100%;
+      min-height: 70px;
+      resize: vertical;
+      box-sizing: border-box;
+    }
+    @media (max-width: 900px) {
+      .memo-months-grid { grid-template-columns: 1fr; }
+    }
+    /* クイック登録: PC=5列 / モバイル=1列 */
+    .quick-mobile-only { display: block; }
+    .quick-desktop-only { display: none; }
+    .quick-cols-grid {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 8px;
+      width: 100%;
+    }
+    .quick-col {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      min-width: 0;
+    }
+    .quick-col label {
+      font-size: 0.85em;
+      color: #666;
+      font-weight: 600;
+    }
+    .quick-col select,
+    .quick-col input[type="text"] {
+      width: 100%;
+      box-sizing: border-box;
+    }
+    .quick-col input[type="text"]:disabled {
+      background: #f0f0f0;
+      color: #999;
+      cursor: not-allowed;
+    }
+    @media (min-width: 901px) {
+      .quick-mobile-only { display: none !important; }
+      .quick-cols-grid.quick-desktop-only { display: grid !important; }
+    }
     .schedule-overlay {
       position: fixed;
       inset: 0;
@@ -325,7 +388,7 @@
     const CUSTOM_KEY = 'schedulesApp:customEmployeeIds';
     const NOTICE_VERSION_KEY = 'schedulesApp:noticeVersion'; // バージョン番号を保存
     const NOTICE_DISMISSED_KEY = 'schedulesApp:noticeDismissed'; // チェックボックスの状態を保存
-    const CURRENT_NOTICE_VERSION = '1.1.0'; // 現在のバージョン番号（必要に応じて変更）
+    const CURRENT_NOTICE_VERSION = '1.2.0'; // 現在のバージョン番号（必要に応じて変更）
     function getSavedCustomIds() {
       try { return JSON.parse(localStorage.getItem(CUSTOM_KEY) || '[]').map(String); } catch { return []; }
     }
@@ -544,48 +607,246 @@
       return employeesVisible.find(e => e && e.id != null && String(e.id) === String(empId)) || null;
     }
 
-    function syncMemoTextarea(empId) {
-      const textarea = document.getElementById('qNote');
-      if (!textarea) return;
-      const target = findActiveEmployeeById(empId);
-      textarea.value = target?.note || '';
+    async function syncMemoTextarea(empId) {
+      await syncMemoMonthInputs(empId);
     }
 
-    // Sync Quick Registration inputs (AM/PM) for selected employee and date
+    const QUICK_PC_COLS = 5;
+
+    /** メモ保存用: 前後空白トリム + 先頭末尾の改行除去 */
+    function normalizeMemoText(raw) {
+      return String(raw ?? '').trim().replace(/^\n+/, '').replace(/\n+$/, '');
+    }
+
+    function isQuickDesktop() {
+      return !!detectEnvironment().isProbablyDesktop;
+    }
+
+    /** 2日前〜今日 / 空白 / 明日〜90日後（PCクイック登録の select 用） */
+    function getQuickDateSections() {
+      const base = JST_NOW.asDate;
+      const ymdAt = (offset) => {
+        const d = new Date(base.getFullYear(), base.getMonth(), base.getDate() + offset);
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${y}-${m}-${day}`;
+      };
+      const past = [];
+      for (let o = -2; o <= 0; o++) past.push(ymdAt(o));
+      const future = [];
+      for (let o = 1; o <= 90; o++) future.push(ymdAt(o));
+      return { past, future };
+    }
+
+    function formatQuickDateLabel(ymd) {
+      const [, mo, da] = ymd.split('-');
+      const label = `${Number(mo)}/${Number(da)}`;
+      return ymd === JST_NOW.ymd ? `${label}（今日）` : label;
+    }
+
+    function setQuickColInputsEnabled(colIndex, enabled) {
+      const amEl = document.getElementById(`qAm-${colIndex}`);
+      const pmEl = document.getElementById(`qPm-${colIndex}`);
+      if (amEl) {
+        amEl.disabled = !enabled;
+        if (!enabled) amEl.value = '';
+      }
+      if (pmEl) {
+        pmEl.disabled = !enabled;
+        if (!enabled) pmEl.value = '';
+      }
+    }
+
+    function updateAllQuickColInputStates() {
+      if (!isQuickDesktop()) return;
+      for (let i = 0; i < QUICK_PC_COLS; i++) {
+        const date = toYMD(document.getElementById(`qDate-${i}`)?.value);
+        setQuickColInputsEnabled(i, !!date);
+      }
+    }
+
+    function resetQuickPcColsAfterSave() {
+      if (!isQuickDesktop()) return;
+      for (let i = 1; i < QUICK_PC_COLS; i++) {
+        const sel = document.getElementById(`qDate-${i}`);
+        if (sel) sel.value = '';
+      }
+      refreshQuickDateSelects();
+      updateAllQuickColInputStates();
+    }
+
+    function getQuickPcDateValues() {
+      return Array.from({ length: QUICK_PC_COLS }, (_, i) => {
+        const el = document.getElementById(`qDate-${i}`);
+        return el ? toYMD(el.value) : '';
+      });
+    }
+
+    function refreshQuickDateSelects() {
+      if (!isQuickDesktop()) return;
+      const { past, future } = getQuickDateSections();
+      for (let i = 0; i < QUICK_PC_COLS; i++) {
+        const sel = document.getElementById(`qDate-${i}`);
+        if (!sel) continue;
+
+        const values = getQuickPcDateValues();
+        const mine = values[i];
+        const usedElsewhere = new Set(
+          values.map((d, j) => (j !== i && d ? d : null)).filter(Boolean),
+        );
+
+        sel.innerHTML = '';
+        for (const d of past) {
+          if (usedElsewhere.has(d)) continue;
+          const opt = document.createElement('option');
+          opt.value = d;
+          opt.textContent = formatQuickDateLabel(d);
+          sel.appendChild(opt);
+        }
+        const empty = document.createElement('option');
+        empty.value = '';
+        empty.textContent = '—';
+        sel.appendChild(empty);
+        for (const d of future) {
+          if (usedElsewhere.has(d)) continue;
+          const opt = document.createElement('option');
+          opt.value = d;
+          opt.textContent = formatQuickDateLabel(d);
+          sel.appendChild(opt);
+        }
+
+        const keep = mine && !usedElsewhere.has(mine) ? mine : '';
+        const canKeep = keep && [...sel.options].some((o) => o.value === keep);
+        let fallback = '';
+        if (i === 0) {
+          const today = JST_NOW.ymd;
+          if ([...sel.options].some((o) => o.value === today)) fallback = today;
+        }
+        sel.value = canKeep ? keep : fallback;
+      }
+      updateAllQuickColInputStates();
+    }
+
+    function ensureQuickColsUI() {
+      const grid = document.getElementById('quickColsGrid');
+      if (!grid || grid.dataset.built === '1' || !isQuickDesktop()) return;
+      grid.innerHTML = Array.from({ length: QUICK_PC_COLS }, (_, i) => `
+        <div class="quick-col" data-col="${i}">
+          <label>日付${i > 0 ? ` ${i + 1}` : ''}</label>
+          <select id="qDate-${i}" class="quick-date-select"></select>
+          <input id="qAm-${i}" type="text" placeholder="午前" class="quick-am-input">
+          <input id="qPm-${i}" type="text" placeholder="午後" class="quick-pm-input">
+        </div>
+      `).join('');
+      grid.querySelectorAll('.quick-date-select').forEach((sel) => {
+        sel.addEventListener('change', () => {
+          refreshQuickDateSelects();
+          const col = Number(String(sel.id).split('-')[1]);
+          if (!Number.isNaN(col)) {
+            const hasDate = !!toYMD(document.getElementById(`qDate-${col}`)?.value);
+            setQuickColInputsEnabled(col, hasDate);
+            if (hasDate) try { syncQuickCol(memoTargetEmployeeId, col); } catch {}
+            else setQuickColInputsEnabled(col, false);
+          }
+        });
+      });
+      grid.dataset.built = '1';
+      refreshQuickDateSelects();
+    }
+
+    async function syncQuickCol(empId, colIndex) {
+      const dateEl = document.getElementById(`qDate-${colIndex}`);
+      const amEl = document.getElementById(`qAm-${colIndex}`);
+      const pmEl = document.getElementById(`qPm-${colIndex}`);
+      if (!dateEl || !amEl || !pmEl) return;
+      const date = toYMD(dateEl.value);
+      if (!date) {
+        setQuickColInputsEnabled(colIndex, false);
+        return;
+      }
+      setQuickColInputsEnabled(colIndex, true);
+      const ym = date.slice(0, 7);
+      let items = monthCache.get(ym);
+      if (!items) {
+        try {
+          const { data: { session } } = await supabase.auth.getSession();
+          const token = session?.access_token;
+          if (token) items = await fetchMonthData(ym, token);
+        } catch {}
+      }
+      let am = '', pm = '';
+      if (items && empId != null) {
+        const strId = String(empId);
+        for (const it of items) {
+          if (String(it.employee_id) === strId && String(it.date).slice(0, 10) === date) {
+            const slot = (String(it.slot || '').toLowerCase() === 'pm') ? 'pm' : 'am';
+            if (slot === 'am') am = it.title || '';
+            if (slot === 'pm') pm = it.title || '';
+          }
+        }
+      }
+      amEl.value = am || '';
+      pmEl.value = pm || '';
+    }
+
+    function collectQuickEntries() {
+      if (isQuickDesktop()) {
+        ensureQuickColsUI();
+        const entries = [];
+        for (let i = 0; i < QUICK_PC_COLS; i++) {
+          const date = toYMD(document.getElementById(`qDate-${i}`)?.value);
+          if (!date) continue;
+          entries.push({
+            date,
+            am: (document.getElementById(`qAm-${i}`)?.value || '').trim(),
+            pm: (document.getElementById(`qPm-${i}`)?.value || '').trim(),
+          });
+        }
+        return entries;
+      }
+      const date = toYMD(document.getElementById('qDate')?.value);
+      if (!date) return [];
+      return [{
+        date,
+        am: (document.getElementById('qAm')?.value || '').trim(),
+        pm: (document.getElementById('qPm')?.value || '').trim(),
+      }];
+    }
+
     async function syncQuickInputs(empId) {
       try {
+        if (isQuickDesktop()) {
+          ensureQuickColsUI();
+          for (let i = 0; i < QUICK_PC_COLS; i++) await syncQuickCol(empId, i);
+          return;
+        }
         const dateEl = document.getElementById('qDate');
         const amEl = document.getElementById('qAm');
         const pmEl = document.getElementById('qPm');
         if (!dateEl || !amEl || !pmEl) return;
-
         const date = toYMD(dateEl.value);
         if (!date) { amEl.value = ''; pmEl.value = ''; return; }
-
         const ym = date.slice(0, 7);
         let items = monthCache.get(ym);
         if (!items) {
           try {
             const { data: { session } } = await supabase.auth.getSession();
             const token = session?.access_token;
-            if (token) {
-              items = await fetchMonthData(ym, token);
-            }
+            if (token) items = await fetchMonthData(ym, token);
           } catch {}
         }
-
         let am = '', pm = '';
         if (items && empId != null) {
           const strId = String(empId);
           for (const it of items) {
-            if (String(it.employee_id) === strId && String(it.date).slice(0,10) === date) {
+            if (String(it.employee_id) === strId && String(it.date).slice(0, 10) === date) {
               const slot = (String(it.slot || '').toLowerCase() === 'pm') ? 'pm' : 'am';
               if (slot === 'am') am = it.title || '';
               if (slot === 'pm') pm = it.title || '';
             }
           }
         }
-
         amEl.value = am || '';
         pmEl.value = pm || '';
       } catch {}
@@ -639,6 +900,110 @@
 
     const $ = (q)=>document.querySelector(q);
     const ymOf = (d)=> `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+    const ymFirstDay = (ym) => `${ym}-01`;
+    const ymLabel = (ym) => {
+      const [y, mo] = ym.split('-').map(Number);
+      return `${y}年${mo}月`;
+    };
+    /** 前月・今月・3ヶ月先まで（計5ヶ月） */
+    function memoMonthsWindow(baseYm = JST_NOW.ym) {
+      const [y, m] = baseYm.split('-').map(Number);
+      const out = [];
+      for (let offset = -1; offset <= 3; offset++) {
+        const d = new Date(y, m - 1 + offset, 1);
+        out.push(ymOf(d));
+      }
+      return out;
+    }
+    function extractMemoFromItems(items, ym, employeeId) {
+      if (!items || employeeId == null) return '';
+      const strId = String(employeeId);
+      const first = ymFirstDay(ym);
+      for (const it of items) {
+        if (String(it.employee_id) !== strId) continue;
+        if (String(it.slot || '').toLowerCase() !== 'memo') continue;
+        const d = String(it.date || '').slice(0, 10);
+        if (d !== first && d.slice(0, 7) !== ym) continue;
+        return (it.title ?? it.memo ?? '').toString();
+      }
+      return '';
+    }
+    function buildMemoByNameFromItems(items, ym, emps) {
+      return Object.fromEntries(
+        emps.map((e) => [e.name, extractMemoFromItems(items, ym, e.id)])
+      );
+    }
+    function ensureMemoMonthsUI() {
+      const grid = document.getElementById('memoMonthsGrid');
+      if (!grid || grid.dataset.built === '1') return;
+      const months = memoMonthsWindow();
+      grid.innerHTML = months.map((ym) => {
+        const isCurrent = ym === JST_NOW.ym;
+        const labelClass = isCurrent ? 'memo-month-current' : '';
+        return `
+        <div class="memo-month-col">
+          <label class="${labelClass}">${ymLabel(ym)}</label>
+          <textarea class="memo-month-input" data-ym="${ym}" placeholder="メモ"></textarea>
+        </div>
+      `;
+      }).join('');
+      grid.dataset.built = '1';
+    }
+    /** 5ヶ月分メモを1リクエストで取得（schedules-get?mode=memos） */
+    async function fetchMemoMonthsBulk(empId, months, token) {
+      const qs = new URLSearchParams({
+        mode: 'memos',
+        employee_id: String(empId),
+        months: months.join(','),
+      });
+      const res = await fetch(
+        `${SUPABASE_URL}/functions/v1/schedules-get?${qs}&_=${Date.now()}`,
+        { headers: { Authorization: `Bearer ${token}` }, cache: 'no-store' },
+      );
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || json?.ok === false) {
+        throw new Error(json?.error || `HTTP ${res.status}`);
+      }
+      return json.memos || {};
+    }
+
+    function applyMemoMonthsToInputs(empId, months, memosByYm) {
+      for (const ym of months) {
+        const ta = document.querySelector(`.memo-month-input[data-ym="${ym}"]`);
+        if (!ta) continue;
+        if (memosByYm && typeof memosByYm === 'object' && ym in memosByYm) {
+          ta.value = (memosByYm[ym] ?? '').toString();
+        } else {
+          const items = monthCache.get(ym);
+          ta.value = extractMemoFromItems(items || [], ym, empId);
+        }
+      }
+    }
+
+    async function syncMemoMonthInputs(empId) {
+      ensureMemoMonthsUI();
+      const months = memoMonthsWindow();
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token || empId == null) {
+        document.querySelectorAll('.memo-month-input').forEach((el) => { el.value = ''; });
+        return;
+      }
+
+      // グリッド等で monthCache が揃っていれば API 不要（社員切替時もここで表示だけ更新）
+      const allCached = months.every((ym) => monthCache.has(ym));
+      if (allCached) {
+        applyMemoMonthsToInputs(empId, months, null);
+        return;
+      }
+
+      try {
+        const memos = await fetchMemoMonthsBulk(empId, months, token);
+        applyMemoMonthsToInputs(empId, months, memos);
+      } catch {
+        applyMemoMonthsToInputs(empId, months, null);
+      }
+    }
     const monthsAround = (base=new Date(), back=3, fwd=3)=>{
       const list=[]; const d=new Date(base.getFullYear(), base.getMonth()-back, 1);
       const end=new Date(base.getFullYear(), base.getMonth()+fwd+1, 1);
@@ -721,9 +1086,10 @@
     }
     /* =============================== 月データ取得（既存APIの1ヶ月単位） =============================== */
     function normalizeSchedules(json){
-      // サーバが {days, rows} を返す前提（desktop版互換）
+      // サーバが {days, rows, month} を返す前提（desktop版互換）
       if (json && Array.isArray(json.rows)) {
         const arr=[];
+        const month = json.month || '';
         for (const row of json.rows){
           const emp = row.employee_name || row.name || '（未割当）';
           const cells = row.cells || {};
@@ -743,6 +1109,16 @@
             };
             push(c.am, 'am', 9);
             push(c.pm, 'pm', 13);
+          }
+          const memoText = (row.memo ?? '').toString().trim();
+          if (memoText && month && row.employee_id != null) {
+            arr.push({
+              employee_name: emp,
+              employee_id: row.employee_id,
+              date: ymFirstDay(month),
+              slot: 'memo',
+              title: memoText,
+            });
           }
         }
         return arr;
@@ -772,9 +1148,16 @@
       for (const it of items) {
         const employee_id = it?.employee_id;
         const date = (it?.date||'').toString().slice(0,10);
-        const slot = (it?.slot||'').toString().toLowerCase() === 'pm' ? 'pm' : 'am';
-        const place = (it?.place ?? '').toString().trim();
+        const slotRaw = (it?.slot||'').toString().toLowerCase();
         if (!employee_id || !date) continue;
+        if (slotRaw === 'memo') {
+          const memo = (it?.memo ?? it?.title ?? '').toString().trim();
+          if (memo) upserts.push({ employee_id, date, slot: 'memo', place: null, memo });
+          else deletes.push({ employee_id, date, slot: 'memo' });
+          continue;
+        }
+        const slot = slotRaw === 'pm' ? 'pm' : 'am';
+        const place = (it?.place ?? '').toString().trim();
         if (place) upserts.push({ employee_id, date, slot, place });
         else deletes.push({ employee_id, date, slot });
       }
@@ -793,7 +1176,11 @@
           body: JSON.stringify(upserts)
         });
         const j = await r.json().catch(()=>({}));
-        if(!r.ok || !j?.ok) throw new Error(j?.error||`upsert HTTP ${r.status}`);
+        if(!r.ok || !j?.ok) {
+          const msg = [j?.error, j?.details].filter(Boolean).join(' — ') || `upsert HTTP ${r.status}`;
+          console.error('[schedules-upsert]', r.status, j);
+          throw new Error(msg);
+        }
       }
       // 触れた月だけキャッシュ破棄
       const ymSet = new Set(items.map(it => (it?.date||'').toString().slice(0,7)).filter(Boolean));
@@ -811,7 +1198,7 @@
           : base.filter(e => !dept || String(e.department || '') === String(dept))
         ).sort((a,b) => (a.row_index ?? 0) - (b.row_index ?? 0) || a.name.localeCompare(b.name,'ja'));
       const employeeNames = emps.map(e => e.name);
-      const memoByName = Object.fromEntries(emps.map(e => [e.name, e.note || '']));
+      const memoByName = buildMemoByNameFromItems(items, ym, emps);
       // 追加: 自分の列 index（currentUser.employee_id と一致する従業員を探す）
       const myIndex = (function(){
         try {
@@ -834,6 +1221,7 @@
       for (const it of items || []) {
         const d = String(it?.date || '').trim();
         if (!d) continue;
+        if (String(it?.slot || '').toLowerCase() === 'memo') continue;
         const slot = (String(it?.slot || '').toUpperCase() === 'PM') ? 'PM' : 'AM';
         const emp = emps.find(e => String(e.id) === String(it.employee_id));
         if (!emp) continue;
@@ -1038,6 +1426,14 @@
       if (noticeLabel) {
         const isOpen = noticeBtn && noticeBtn.getAttribute('aria-pressed') === 'true';
         noticeLabel.style.color = isOpen ? '#333' : '#999';
+      }
+
+      const quickBtn = document.getElementById('tglQuick');
+      if (quickBtn?.getAttribute('aria-pressed') === 'true') {
+        try {
+          ensureQuickColsUI();
+          syncQuickInputs(memoTargetEmployeeId);
+        } catch {}
       }
     }
 
@@ -1405,35 +1801,27 @@
     document.getElementById('quickSaveBtn').addEventListener('click', async ()=>{
       showOverlay(true,'保存中...');
       try{
-        const date = toYMD(document.getElementById('qDate').value);
-        if(!date){ alert('日付(YYYY-MM-DD)を入力'); return; }
-        const am = (document.getElementById('qAm').value||'').trim();
-        const pm = (document.getElementById('qPm').value||'').trim();
+        const entries = collectQuickEntries();
+        if (!entries.length) { alert('日付を1件以上選択してください'); return; }
+        const dates = entries.map((e) => e.date);
+        if (new Set(dates).size !== dates.length) {
+          alert('同じ日付が複数列に選ばれています');
+          return;
+        }
         let employee_id;
         if (currentUser?.is_admin) {
           const v = document.getElementById('memoTargetSelect')?.value;
-          // 数字変換せず、そのまま文字列を使う
           employee_id = v ? v : await ensureMyEmployeeId();
         } else {
           employee_id = await ensureMyEmployeeId();
         }
-        const upserts=[], deletes=[];
-        if(am) upserts.push({ employee_id, date, slot:'am', place:am }); else deletes.push({ employee_id, date, slot:'am' });
-        if(pm) upserts.push({ employee_id, date, slot:'pm', place:pm }); else deletes.push({ employee_id, date, slot:'pm' });
-
-        const { data:{ session } } = await supabase.auth.getSession();
-        const token=session?.access_token; if(!token) throw new Error('未ログイン');
-        if(deletes.length){
-          const r=await fetch(`${SUPABASE_URL}/functions/v1/schedules-delete`,{ method:'POST', headers:{'Authorization':`Bearer ${token}`,'Content-Type':'application/json'}, body:JSON.stringify(deletes) });
-          const j=await r.json().catch(()=>({})); if(!r.ok || !j?.ok) throw new Error(j?.error||`HTTP ${r.status}`);
+        const items = [];
+        for (const { date, am, pm } of entries) {
+          items.push({ employee_id, date, slot: 'am', place: am });
+          items.push({ employee_id, date, slot: 'pm', place: pm });
         }
-        if(upserts.length){
-          const r=await fetch(`${SUPABASE_URL}/functions/v1/schedules-upsert`,{ method:'POST', headers:{'Authorization':`Bearer ${token}`,'Content-Type':'application/json'}, body:JSON.stringify(upserts) });
-          const j=await r.json().catch(()=>({})); if(!r.ok || !j?.ok) throw new Error(j?.error||`HTTP ${r.status}`);
-        }
-        // ★ 追加：当月キャッシュ破棄 → 再描画
-        const ym = (document.getElementById('qDate').value || '').slice(0,7);
-        if (ym) monthCache.delete(ym);
+        await upsertScheduleItems(items);
+        resetQuickPcColsAfterSave();
         await refreshView();
         alert('更新しました');
       }catch(e){ alert('保存失敗：'+e.message); } finally {
@@ -1444,43 +1832,35 @@
     document.getElementById('memoSaveBtn').addEventListener('click', async ()=>{
       showOverlay(true,'保存中...');
       try{
-        const noteRaw = document.getElementById('qNote')?.value;
-        const note = typeof noteRaw === 'string' ? noteRaw : String(noteRaw ?? '');
-
         let employee_id;
         if (currentUser?.is_admin) {
           const v = (document.getElementById('memoTargetSelect')?.value ?? '').trim();
-          employee_id = v || await ensureMyEmployeeId(); // 型はそのまま
+          employee_id = v || await ensureMyEmployeeId();
         } else {
-          employee_id = await ensureMyEmployeeId();      // 型はそのまま
+          employee_id = await ensureMyEmployeeId();
         }
-
-        try {
-          const opts = Array.from(document.querySelectorAll('#memoTargetSelect option'))
-            .map(o => ({ value: o.value, text: o.textContent }));
-          console.debug('[memo/save] options:', opts);
-        } catch {}
-        console.debug('[memo/save] payload:', { employee_id, type: typeof employee_id, noteType: typeof note, isAdmin: !!currentUser?.is_admin });
 
         if (employee_id == null || employee_id === '') {
           alert('対象の従業員IDが不正です');
           return;
         }
 
-        const { data:{ session } } = await supabase.auth.getSession();
-        const token=session?.access_token; if(!token) throw new Error('未ログイン');
-        const r = await fetch(`${SUPABASE_URL}/functions/v1/employee-note-update`,{
-          method:'POST',
-          headers:{ 'Authorization':`Bearer ${token}`, 'Content-Type':'application/json' },
-          body: JSON.stringify({ employee_id, note })
+        ensureMemoMonthsUI();
+        const months = memoMonthsWindow();
+        const items = months.map((ym) => {
+          const ta = document.querySelector(`.memo-month-input[data-ym="${ym}"]`);
+          const memo = normalizeMemoText(ta?.value ?? '');
+          return {
+            employee_id,
+            date: ymFirstDay(ym),
+            slot: 'memo',
+            memo,
+            title: memo,
+          };
         });
-        const text = await r.text();
-        console.debug('[memo/save] response:', r.status, text);
-        let j=null; try{ j=JSON.parse(text);}catch{}
-        if(!r.ok || j?.ok===false) throw new Error(j?.error||`HTTP ${r.status}`);
 
-        await loadCurrentUserAndEmployees();
-        try { updateMemoTargetUI({ preserveSelection: true }); } catch {}
+        await upsertScheduleItems(items);
+        await syncMemoMonthInputs(employee_id);
         await refreshView();
         alert('メモを保存しました');
       }catch(e){ alert('保存失敗: '+ e.message); } finally {
@@ -1672,10 +2052,12 @@
           (a,b)=>(a.row_index??0)-(b.row_index??0) || a.name.localeCompare(b.name,'ja')
         );
 
+        const monthMemoYm = JST_NOW.ym;
         for (const e of list) {
           const sched = byEmp.get(e.id) || { am:'', pm:'' };
           const amText = sched.am || '';
           const pmText = sched.pm || '';
+          const memoText = extractMemoFromItems(items, monthMemoYm, e.id);
 
           // 「休」判定
           const amRest = amText.includes('休');
@@ -1721,7 +2103,7 @@
               </div>
               <div class="cell">
                 <span class="label">メモ</span>
-                <div class="val memo">${(e.note||'')}</div>
+                <div class="val memo">${memoText}</div>
               </div>
             </div>
           `;
@@ -1903,10 +2285,14 @@
           try{
             // 既存 today設定
             const today = JST_NOW.ymd;
-            const qd = document.getElementById('qDate');
-            if (qd) {
-              qd.value = today;
-              try { qd.dispatchEvent(new Event('change', { bubbles: true })); } catch {}
+            if (isQuickDesktop()) {
+              ensureQuickColsUI();
+            } else {
+              const qd = document.getElementById('qDate');
+              if (qd) {
+                qd.value = today;
+                try { qd.dispatchEvent(new Event('change', { bubbles: true })); } catch {}
+              }
             }
 
             applyRoleVisibility();                       // 権限で可視切替
@@ -2066,6 +2452,8 @@
 
     <!-- クイック登録 -->
     <div id="quickPanel" class="panel quick-section" style="display:none;">
+      <div id="quickColsGrid" class="quick-cols-grid quick-desktop-only"></div>
+      <div class="quick-mobile-only">
       <div class="row">
         <label>日付</label>
         <input id="qDate" type="date" />
@@ -2076,6 +2464,7 @@
       <div class="row" style="margin-top:8px;">
         <input id="qPm" type="text" placeholder="午後（例：現場B）" style="flex:1 1 200px;">
       </div>
+      </div>
     </div>
 
     <!-- メモ -->
@@ -2083,7 +2472,7 @@
       <div id="memoTargetWrap" class="row" style="gap:6px;margin-bottom:6px;display:none;">
         <select id="memoTargetSelect" style="min-width:160px;"></select>
       </div>
-      <textarea id="qNote" placeholder="メモ（全月共通）" style="width:100%;min-height:70px;"></textarea>
+      <div id="memoMonthsGrid" class="memo-months-grid"></div>
     </div>
 
     <!-- 会社予定登録（管理者のみ可視） -->
@@ -2127,8 +2516,9 @@
         <p>※URLや仕様は変更になる可能性があります<br>
         <br><strong>テスト版変更履歴</strong><br>
         ※修正を完全に適用するにはshift＋F5で更新をしてください※<br>
+        NEW メモ欄を各月での登録に変更しました、上部の予定インプットをPC版のみ5日間同時に登録できるように変更しました<br>
         NEW スマホ版・PC版ともに自分の列は赤文字で表示するように修正しました<br>
-	NEW iOS26でアイコンの背景が黒になる不具合を修正しました<br>
+	      NEW iOS26でアイコンの背景が黒になる不具合を修正しました<br>
         経理・事務の予定表の欄を作成しました<br>
         今日の予定一覧のカラー表示の調整<br>
         カスタム表示機能の追加<br>(☆ボタンから従業員を選んで専用の表示画面の作成が出来ます、端末に保存)<br>
@@ -2153,7 +2543,7 @@
         セルをクリックすると入力欄が開きます。<br>
         もしエクセルのように中の文字でなくセルを選択したい場合は<br>クリックを長押し・右クリックをしてください。<br>
         上部の「保存」ボタンを押すと変更が保存されます。<br>
-        メモはいままでと違い全ての月で共通です<br>
+        メモは各月の入力になりました<br>
         下のセル上では編集不可、上部メモ登録欄からのみ編集可能です<br>
         現在は管理者以外は自分の欄以外編集不可<br>
         <br><strong>スマホ操作について</strong><br>
@@ -2176,13 +2566,13 @@
     <div class="help-backdrop" data-first-visit-close></div>
     <div class="help-panel" role="dialog" aria-modal="true" aria-labelledby="firstVisitTitle">
       <button class="help-close" type="button" title="閉じる" data-first-visit-close>&times;</button>
-      <h2 id="firstVisitTitle">お知らせ表示方法の変更</h2>
+      <h2 id="firstVisitTitle">メモ欄の各月での登録可</h2>
       <div class="help-body">
         <p>
-        お知らせの表示方法・編集方法を変更しました<br>
-      以前までと違い、初回表示時は閉じているので<br>
-		  内容確認したい場合、タップ・クリックで展開してください<br>
-		  また管理者の方は投稿済みの内容もお知らせから編集可能です<br>
+        メモ欄を各月での登録に変更しました<br>
+        予定欄をPC版のみ5日間同時に登録できるように変更しました<br>
+        機能変更を完全に適用するために一度shift＋F5で更新お願いします<br>
+
         エラーや問題などあればをお手数ですが、岩井にご連絡ください<br>
       よろしくお願いします<br>
         </p>
